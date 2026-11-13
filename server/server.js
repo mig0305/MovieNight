@@ -2,6 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import { connectDB } from './db.js';
 import { logger } from './middleware/logger.js';
+import { requireAuth } from './middleware/requireAuth.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import authRouter from './routes/auth.js';
+import moviesRouter from './routes/movies.js';
+import nightsRouter from './routes/nights.js';
 
 const app = express();
 
@@ -14,10 +19,19 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// public
+app.use('/api/auth', authRouter);
+app.use('/api/movies', moviesRouter);
+// locked
+app.use('/api/nights', requireAuth, nightsRouter);
+
 // After all routes: nothing matched
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
+
+// Last: anything that threw
+app.use(errorHandler);
 
 const PORT = process.env.PORT ?? 3000;
 
