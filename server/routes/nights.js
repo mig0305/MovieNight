@@ -7,7 +7,7 @@ import { getMovie } from '../services/tmdb.js';
 import { computeResult } from '../utils/scoring.js';
 import { makeJoinCode } from '../utils/joinCode.js';
 import {
-  validateNight, validateNightUpdate, validateJoin,
+  validateNight, validateNightUpdate,
   validateSuggestion, validateVote,
 } from '../middleware/validate.js';
 
@@ -58,24 +58,8 @@ nightsRouter.post('/', validateNight, async (req, res) => {
   res.status(201).json(night);
 });
 
-// POST /api/nights/join  { joinCode }
-nightsRouter.post('/join', validateJoin, async (req, res) => {
-  const joinCode = req.body.joinCode.trim().toUpperCase();
-  const night = await Night.findOne({ joinCode });
-  if (!night) return res.status(404).json({ error: 'No night with that code' });
-  if (night.status === 'closed') {
-    return res.status(400).json({ error: 'This night is closed' });
-  }
-  // $addToSet: joining twice does nothing
-  const updated = await Night.findByIdAndUpdate(
-    night._id,
-    { $addToSet: { members: req.userId } },
-    { new: true },
-  );
-  res.json(updated);
-});
-
 // GET /api/nights/:id: the night, its members, suggestions and my ballot
+// (to join a night with a code, see routes/memberships.js)
 nightsRouter.get('/:id', async (req, res) => {
   const night = await findMyNight(req);
   if (!night) return notFound(res);
@@ -94,7 +78,7 @@ nightsRouter.get('/:id', async (req, res) => {
     ...night.toObject(),
     isOwner: night.owner._id.toString() === req.userId,
     suggestions,
-    myVote: myVote ?? { ranking: [], veto: null },
+    myBallot: myVote ?? { ranking: [], veto: null },
     ballotsCast,
   });
 });
@@ -183,17 +167,17 @@ nightsRouter.delete('/:id/suggestions/:suggestionId', async (req, res) => {
 
 // ---------- voting ----------
 
-// GET /api/nights/:id/vote: my ballot
-nightsRouter.get('/:id/vote', async (req, res) => {
+// GET /api/nights/:id/ballot: my ballot
+nightsRouter.get('/:id/ballot', async (req, res) => {
   const night = await findMyNight(req);
   if (!night) return notFound(res);
   const vote = await Vote.findOne({ night: night._id, user: req.userId });
   res.json(vote ?? { ranking: [], veto: null });
 });
 
-// PUT /api/nights/:id/vote  { ranking: [id1, id2, id3], veto: id | null }
+// PUT /api/nights/:id/ballot  { ranking: [id1, id2, id3], veto: id | null }
 // PUT replaces the whole ballot: send it all every time.
-nightsRouter.put('/:id/vote', validateVote, async (req, res) => {
+nightsRouter.put('/:id/ballot', validateVote, async (req, res) => {
   const night = await findMyNight(req);
   if (!night) return notFound(res);
   if (night.status === 'closed') {

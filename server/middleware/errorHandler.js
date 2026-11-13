@@ -10,6 +10,21 @@ export function errorHandler(err, req, res, next) {
   if (err.expose) {
     return res.status(err.status).json({ error: err.message });
   }
+  // A unique index said no. Happens when two identical requests arrive at the
+  // same moment and both pass the "does it exist?" check in the route.
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyValue ?? err.keyPattern ?? {})[0];
+    const messages = {
+      email: 'Email already registered',
+      tmdbId: 'That film is already suggested',
+      joinCode: 'Please try again',
+    };
+    return res.status(409).json({ error: messages[field] ?? 'That already exists' });
+  }
+  // Mongoose schema rules (required, min, enum) or an id that isn't an ObjectId
+  if (err.name === 'ValidationError' || err.name === 'CastError') {
+    return res.status(400).json({ error: 'Invalid data' });
+  }
   // Full details in the server terminal, a generic message to the client
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on the server' });

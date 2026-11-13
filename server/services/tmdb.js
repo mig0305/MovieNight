@@ -28,6 +28,7 @@ async function tmdbGet(path, params = {}) {
   if (!res.ok) throw httpError(502, `Movie database error (HTTP ${res.status})`);
 
   const data = await res.json();
+  if (cache.size >= 500) cache.clear(); // keep memory bounded
   cache.set(url, { data, expires: Date.now() + CACHE_MS });
   return data;
 }

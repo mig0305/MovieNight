@@ -4,26 +4,29 @@ import mongoose from 'mongoose';
 // Bad input -> 400 with a message a person can read.
 // Every check uses typeof so objects like { "$ne": null } never reach a query.
 
-const isText = (value) => typeof value === 'string' && value.trim() !== '';
-const isPositiveInt = (value) => Number.isInteger(value) && value > 0;
+const isText = (value, max = 100) =>
+  typeof value === 'string' && value.trim() !== '' && value.length <= max;
+const isPositiveInt = (value, max = Number.MAX_SAFE_INTEGER) =>
+  Number.isInteger(value) && value > 0 && value <= max;
 
 export function validateSignup(req, res, next) {
   const { email, password, displayName } = req.body ?? {};
-  if (!isText(email) || !email.includes('@')) {
+  if (!isText(email, 254) || !email.includes('@')) {
     return res.status(400).json({ error: 'A valid email is required' });
   }
-  if (typeof password !== 'string' || password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  // bcrypt only uses the first 72 bytes, so cap it there
+  if (typeof password !== 'string' || password.length < 8 || password.length > 72) {
+    return res.status(400).json({ error: 'Password must be 8 to 72 characters' });
   }
-  if (!isText(displayName)) {
-    return res.status(400).json({ error: 'displayName is required' });
+  if (!isText(displayName, 50)) {
+    return res.status(400).json({ error: 'displayName is required (up to 50 characters)' });
   }
   next();
 }
 
 export function validateLogin(req, res, next) {
   const { email, password } = req.body ?? {};
-  if (!isText(email) || typeof password !== 'string' || password === '') {
+  if (!isText(email, 254) || typeof password !== 'string' || password === '') {
     return res.status(400).json({ error: 'Email and password are required' });
   }
   next();
@@ -33,10 +36,10 @@ export function validateLogin(req, res, next) {
 export function validateNight(req, res, next) {
   const { title, maxRuntimeMin } = req.body ?? {};
   if (!isText(title)) {
-    return res.status(400).json({ error: 'title is required' });
+    return res.status(400).json({ error: 'title is required (up to 100 characters)' });
   }
-  if (!isPositiveInt(maxRuntimeMin)) {
-    return res.status(400).json({ error: 'maxRuntimeMin must be a whole number of minutes above 0' });
+  if (!isPositiveInt(maxRuntimeMin, 1000)) {
+    return res.status(400).json({ error: 'maxRuntimeMin must be a whole number of minutes from 1 to 1000' });
   }
   next();
 }
@@ -48,10 +51,10 @@ export function validateNightUpdate(req, res, next) {
     return res.status(400).json({ error: 'Send at least one of title, maxRuntimeMin, status' });
   }
   if (title !== undefined && !isText(title)) {
-    return res.status(400).json({ error: 'title cannot be empty' });
+    return res.status(400).json({ error: 'title must be 1 to 100 characters' });
   }
-  if (maxRuntimeMin !== undefined && !isPositiveInt(maxRuntimeMin)) {
-    return res.status(400).json({ error: 'maxRuntimeMin must be a whole number of minutes above 0' });
+  if (maxRuntimeMin !== undefined && !isPositiveInt(maxRuntimeMin, 1000)) {
+    return res.status(400).json({ error: 'maxRuntimeMin must be a whole number of minutes from 1 to 1000' });
   }
   if (status !== undefined && status !== 'open' && status !== 'closed') {
     return res.status(400).json({ error: "status must be 'open' or 'closed'" });
@@ -61,7 +64,7 @@ export function validateNightUpdate(req, res, next) {
 
 export function validateJoin(req, res, next) {
   const { joinCode } = req.body ?? {};
-  if (!isText(joinCode)) {
+  if (!isText(joinCode, 20)) {
     return res.status(400).json({ error: 'joinCode is required' });
   }
   next();
@@ -75,7 +78,7 @@ export function validateSuggestion(req, res, next) {
   next();
 }
 
-// PUT /api/nights/:id/vote  { ranking: [id, id, id], veto: id | null }
+// PUT /api/nights/:id/ballot  { ranking: [id, id, id], veto: id | null }
 export function validateVote(req, res, next) {
   const { ranking = [], veto = null } = req.body ?? {};
   const isId = (value) => typeof value === 'string' && mongoose.isValidObjectId(value);

@@ -71,4 +71,6 @@ user per night" by shape instead of by query.
 - Owner-only actions (edit, close, delete the night) → **403** for other members.
 - Deleting a night deletes its suggestions and votes.
 - Deleting a suggestion removes it from every ballot in that night.
-- Voting is refused once a night is `closed`.
+- Joining, suggesting and voting are refused once a night is `closed`.
+- Unique indexes (`email`, `joinCode`, `{night, tmdbId}`, `{night, user}`) are the
+  last line of defence: two identical requests at the same instant get **409**, not a duplicate.

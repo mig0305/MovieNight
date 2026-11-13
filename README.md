@@ -9,12 +9,15 @@ Miguel Aoun (242464) · Sara Abi Ghosn (240073)
 
 > This repo currently holds the **back end** (Milestones 1–3, server side).
 > The React client goes in `client/`.
+>
+> **Change from the proposal:** the database is MongoDB (Atlas) instead of
+> PostgreSQL. The tables map one-to-one to collections; see `docs/schema.md`.
 
 ## Tech stack
 
 | Part      | Choice |
 |-----------|--------|
-| Back end  | Node.js 20+, Express 5, ES modules (`"type": "module"`) |
+| Back end  | Node.js 20.6+ (for `--env-file`), Express 5, ES modules (`"type": "module"`) |
 | Database  | MongoDB (Atlas) with Mongoose |
 | Auth      | bcrypt password hashes, JWT (1 h expiry) sent as `Authorization: Bearer <token>` |
 | Third-party API | TMDB (search + movie details), called only from the server |
@@ -88,20 +91,24 @@ Base URL: `http://localhost:3000/api`. Every body is JSON. Every error is
 | GET    | `/movies/:tmdbId` | – | 200 movie | 400, 404, 502 |
 | GET    | `/nights?status=open\|closed` | ✔ | 200 `[night]` | 401 |
 | POST   | `/nights` `{ title, maxRuntimeMin }` | ✔ | 201 night | 400, 401 |
-| POST   | `/nights/join` `{ joinCode }` | ✔ | 200 night | 400, 401, 404 |
-| GET    | `/nights/:id` | ✔ member | 200 night + `members`, `suggestions`, `myVote`, `ballotsCast`, `isOwner` | 401, 404 |
+| GET    | `/nights/:id` | ✔ member | 200 night + `members`, `suggestions`, `myBallot`, `ballotsCast`, `isOwner` | 401, 404 |
 | PATCH  | `/nights/:id` `{ title?, maxRuntimeMin?, status? }` | ✔ owner | 200 night | 400, 401, 403, 404 |
 | DELETE | `/nights/:id` | ✔ owner | 204 | 401, 403, 404 |
+| POST   | `/memberships` `{ joinCode }` (join a night) | ✔ | 201 night (200 if already in) | 400, 401, 404 |
 | POST   | `/nights/:id/suggestions` `{ tmdbId }` | ✔ member | 201 suggestion | 400, 401, 404, 409 |
 | DELETE | `/nights/:id/suggestions/:suggestionId` | ✔ adder or owner | 204 | 400, 401, 403, 404 |
-| GET    | `/nights/:id/vote` | ✔ member | 200 `{ ranking, veto }` | 401, 404 |
-| PUT    | `/nights/:id/vote` `{ ranking: [id…≤3], veto: id\|null }` | ✔ member | 200 ballot | 400, 401, 404 |
+| GET    | `/nights/:id/ballot` | ✔ member | 200 `{ ranking, veto }` | 401, 404 |
+| PUT    | `/nights/:id/ballot` `{ ranking: [id…≤3], veto: id\|null }` | ✔ member | 200 ballot | 400, 401, 404 |
 | GET    | `/nights/:id/result` | ✔ member | 200 `{ final, winner, standings, ballots }` | 401, 404 |
 
 - **401**: no token, bad token or expired token. **403**: you're a member but
   not allowed (not the owner). **404**: not found *or not yours*. A night you
   aren't a member of looks exactly like one that doesn't exist.
-- Closed nights refuse new suggestions, removals and votes (400).
+- **409**: duplicates (email taken, film already suggested), even when two
+  identical requests arrive at the same moment (the unique index catches it).
+- Closed nights refuse new members, suggestions, removals and ballots (400).
+- URLs name things, not actions: joining a night *creates a membership*
+  (`POST /memberships`), and voting *replaces your ballot* (`PUT …/ballot`).
 
 ### For the React client (Milestone 3)
 
@@ -131,12 +138,13 @@ server/
 │   ├── logger.js          time METHOD path
 │   ├── requireAuth.js     Bearer token → req.userId, else 401
 │   ├── validate.js        one validator per request body → 400
-│   └── errorHandler.js    bad JSON → 400, anything else → 500 (no crash)
+│   └── errorHandler.js    bad JSON → 400, duplicate → 409, anything else → 500 (no crash)
 ├── models/                User, Night, Suggestion, Vote
 ├── routes/
 │   ├── auth.js            /api/auth
 │   ├── movies.js          /api/movies (TMDB proxy)
-│   └── nights.js          /api/nights (+ suggestions, vote, result)
+│   ├── nights.js          /api/nights (+ suggestions, ballot, result)
+│   └── memberships.js     /api/memberships (join with a code)
 ├── services/tmdb.js       TMDB calls + 10-min cache
 ├── utils/                 scoring.js, joinCode.js, httpError.js
 └── requests.http          every route, ready to send

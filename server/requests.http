@@ -57,8 +57,8 @@ Content-Type: application/json
 GET {{api}}/nights?status=open
 Authorization: Bearer {{token}}
 
-### Join with a code -> 200   (404 bad code, 400 closed night)
-POST {{api}}/nights/join
+### Join with a code -> 201 (200 if already in)   (404 bad code, 400 closed night)
+POST {{api}}/memberships
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
@@ -98,14 +98,14 @@ Content-Type: application/json
 
 ### Save my ballot (replaces it) -> 200
 ### ranking: up to 3 suggestion ids, best first. veto: one id or null.
-PUT {{api}}/nights/{{nightId}}/vote
+PUT {{api}}/nights/{{nightId}}/ballot
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "ranking": ["{{suggestionId}}"], "veto": null }
 
 ### My ballot -> 200
-GET {{api}}/nights/{{nightId}}/vote
+GET {{api}}/nights/{{nightId}}/ballot
 Authorization: Bearer {{token}}
 
 ### Result: winner, runners-up, and why each film lost -> 200

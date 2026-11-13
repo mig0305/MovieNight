@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import authRouter from './routes/auth.js';
 import moviesRouter from './routes/movies.js';
 import nightsRouter from './routes/nights.js';
+import membershipsRouter from './routes/memberships.js';
 
 // If a value changes between environments, it's config, not code.
 // Locally it comes from server/.env; in production from the host's settings page.
@@ -21,7 +22,9 @@ if (missing.length > 0) {
 const app = express();
 
 // Order matters: cors and json before the routes
-app.use(cors({ origin: process.env.CLIENT_ORIGIN }));
+// Origin must match exactly: drop a trailing / so "http://localhost:5173/" still works
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN.replace(/\/+$/, '');
+app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 app.use(logger);
 
@@ -34,6 +37,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/movies', moviesRouter);
 // locked
 app.use('/api/nights', requireAuth, nightsRouter);
+app.use('/api/memberships', requireAuth, membershipsRouter);
 
 // After all routes: nothing matched
 app.use((req, res) => {
@@ -45,5 +49,11 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT ?? 3000;
 
-await connectDB(process.env.MONGODB_URI);
+try {
+  await connectDB(process.env.MONGODB_URI);
+} catch (err) {
+  console.error(`Could not connect to MongoDB: ${err.message}`);
+  console.error('Check MONGODB_URI, and in Atlas that your IP is allowed (Network Access).');
+  process.exit(1);
+}
 app.listen(PORT, () => console.log(`API listening on :${PORT}`));
