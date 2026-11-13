@@ -8,6 +8,16 @@ import authRouter from './routes/auth.js';
 import moviesRouter from './routes/movies.js';
 import nightsRouter from './routes/nights.js';
 
+// If a value changes between environments, it's config, not code.
+// Locally it comes from server/.env; in production from the host's settings page.
+const required = ['MONGODB_URI', 'JWT_SECRET', 'CLIENT_ORIGIN', 'TMDB_TOKEN'];
+const missing = required.filter((name) => !process.env[name]);
+if (missing.length > 0) {
+  console.error(`Missing environment variables: ${missing.join(', ')}`);
+  console.error('Copy server/.env.example to server/.env and fill it in.');
+  process.exit(1);
+}
+
 const app = express();
 
 // Order matters: cors and json before the routes
