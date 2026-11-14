@@ -11,7 +11,7 @@ import {
   validateSuggestion, validateVote,
 } from '../middleware/validate.js';
 
-// Every route here runs after requireAuth (see server.js), so req.userId is set.
+// Every route here runs after requireAuth (see app.js), so req.userId is set.
 const nightsRouter = express.Router();
 
 // ---------- helpers ----------

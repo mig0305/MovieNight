@@ -1,4 +1,4 @@
-// Last middleware in server.js. Express 5 sends errors thrown in async
+// Last middleware in app.js. Express 5 sends errors thrown in async
 // routes here, so a bad request or a database hiccup never crashes the server.
 export function errorHandler(err, req, res, next) {
   // express.json() could not parse the body

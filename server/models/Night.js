@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 
-// One movie night. In PostgreSQL the members would be a separate
 // night_members table; in MongoDB we keep them as an array of user ids.
 const nightSchema = new mongoose.Schema({
   owner: {

@@ -4,7 +4,7 @@ import { validateJoin } from '../middleware/validate.js';
 
 // Joining a night with its code creates a membership.
 // The URL names the thing (memberships); POST says "create one".
-// Runs after requireAuth (see server.js), so req.userId is set.
+// Runs after requireAuth (see app.js), so req.userId is set.
 const membershipsRouter = express.Router();
 
 // POST /api/memberships  { joinCode }

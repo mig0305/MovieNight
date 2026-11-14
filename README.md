@@ -17,7 +17,7 @@ Miguel Aoun (242464) · Sara Abi Ghosn (240073)
 
 | Part      | Choice |
 |-----------|--------|
-| Back end  | Node.js 20.6+ (for `--env-file`), Express 5, ES modules (`"type": "module"`) |
+| Back end  | Node.js 20+, Express 5, ES modules (`"type": "module"`), dotenv |
 | Database  | MongoDB (Atlas) with Mongoose |
 | Auth      | bcrypt password hashes, JWT (1 h expiry) sent as `Authorization: Bearer <token>` |
 | Third-party API | TMDB (search + movie details), called only from the server |
@@ -43,10 +43,10 @@ npm run dev               # node --watch, restarts on every save
 | `TMDB_TOKEN`    | TMDB "API Read Access Token" | Stays on the server |
 | `TMDB_BASE_URL` | `https://api.themoviedb.org/3` | Optional |
 
-`.env` is git-ignored; only `.env.example` is committed. `npm run dev` loads
-`.env` with Node's built-in `--env-file` flag. `npm start` (production) expects
-the variables from the host's settings page. The server refuses to start and
-names any variable that is missing.
+`.env` is git-ignored; only `.env.example` is committed. `server.js` loads
+`.env` with `import 'dotenv/config'` on its first line. In production there is
+no `.env` file; the variables come from the host's settings page. The server
+refuses to start and names any variable that is missing.
 
 Try every route with `server/requests.http` (VS Code **REST Client**
 extension), or with curl:
@@ -131,7 +131,8 @@ Every request runs the line in order:
 
 ```
 server/
-├── server.js              app setup, middleware order, env check
+├── app.js                 the Express app: middleware order + routes (exports app)
+├── server.js              starts it: loads .env, env check, connect DB, then listen
 ├── db.js                  mongoose.connect
 ├── auth/token.js          signToken / verifyToken (JWT)
 ├── middleware/
