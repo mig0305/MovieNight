@@ -31,7 +31,7 @@ npm install
 cp .env.example .env      # then fill in the values below
 npm run dev               # node --watch, restarts on every save
 # Connected to MongoDB
-# API listening on :3000
+# Listening on port 3000
 ```
 
 | Variable        | Example | What it is |
