@@ -18,6 +18,7 @@ Miguel Aoun (242464) · Sara Abi Ghosn (240073)
 | Part      | Choice |
 |-----------|--------|
 | Back end  | Node.js 20+, Express 5, ES modules (`"type": "module"`), dotenv |
+| Validation & security | zod, helmet, express-rate-limit, Mongoose `sanitizeFilter` |
 | Database  | MongoDB (Atlas) with Mongoose |
 | Auth      | bcrypt password hashes, JWT (1 h expiry) sent as `Authorization: Bearer <token>` |
 | Third-party API | TMDB (search + movie details), called only from the server |
@@ -69,6 +70,16 @@ curl -X POST localhost:3000/api/auth/login \
 - Owner can rename, change the cap, close voting, or delete the night
   (deleting removes its suggestions and votes)
 
+### Security
+
+- **helmet** sets secure headers and removes `X-Powered-By`
+- **Rate limits**: 300 requests / 15 min per IP on `/api`; 5 *failed* logins / 15 min
+  on `/api/auth/login` (429 `{ error }`)
+- **Body size** capped at 10 kB
+- **zod** checks every request body and strips fields it doesn't declare
+  (title ≤ 80 chars, `maxRuntimeMin` 30–400, join code 6 chars, ranking ≤ 3 ids)
+- **`sanitizeFilter`** neutralises `{ "$ne": … }` style injection in queries
+
 ### The scoring algorithm (`server/utils/scoring.js`)
 
 1. Drop films longer than the runtime cap → *"Runs 179 min, over the 150-min cap"*
@@ -85,7 +96,7 @@ Base URL: `http://localhost:3000/api`. Every body is JSON. Every error is
 |--------|------|------|---------|----------|
 | GET    | `/health` | – | 200 | – |
 | POST   | `/auth/signup` `{ email, password, displayName }` | – | 201 `{ token, user }` | 400, 409 |
-| POST   | `/auth/login` `{ email, password }` | – | 200 `{ token, user }` | 400, 401 |
+| POST   | `/auth/login` `{ email, password }` | – | 200 `{ token, user }` | 400, 401, 429 |
 | GET    | `/auth/me` | ✔ | 200 `{ user }` | 401 |
 | GET    | `/movies/search?query=&page=` | – | 200 `{ page, totalPages, results }` | 400, 502 |
 | GET    | `/movies/:tmdbId` | – | 200 movie | 400, 404, 502 |
@@ -127,7 +138,7 @@ React (Vite) :5173 ──fetch + Bearer token──▶ Express API :3000 ──M
 ```
 
 Every request runs the line in order:
-`cors → express.json() → logger → router → (requireAuth → validation → route) → 404 → errorHandler`
+`helmet → cors → express.json() → logger → rate limit → router → (requireAuth → validate(zod) → route) → 404 → errorHandler`
 
 ```
 server/
@@ -138,7 +149,7 @@ server/
 ├── middleware/
 │   ├── logger.js          time METHOD path
 │   ├── requireAuth.js     Bearer token → req.userId, else 401
-│   ├── validate.js        one validator per request body → 400
+│   ├── validate.js        zod schemas + validate(schema) middleware → 400
 │   └── errorHandler.js    bad JSON → 400, duplicate → 409, anything else → 500 (no crash)
 ├── models/                User, Night, Suggestion, Vote
 ├── routes/

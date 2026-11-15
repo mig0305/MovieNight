@@ -23,4 +23,7 @@ const suggestionSchema = new mongoose.Schema({
 // The same film can only be suggested once per night
 suggestionSchema.index({ night: 1, tmdbId: 1 }, { unique: true });
 
+// S22 indexes: matches find({ night }).sort({ createdAt: 1 }) on the night page
+suggestionSchema.index({ night: 1, createdAt: 1 });
+
 export const Suggestion = mongoose.model('Suggestion', suggestionSchema);

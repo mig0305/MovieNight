@@ -15,4 +15,7 @@ const nightSchema = new mongoose.Schema({
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 }, { timestamps: true });
 
+// S22 indexes: matches find({ members: userId }).sort({ createdAt: -1 }) on GET /api/nights
+nightSchema.index({ members: 1, createdAt: -1 });
+
 export const Night = mongoose.model('Night', nightSchema);

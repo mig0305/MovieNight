@@ -7,8 +7,11 @@ import { getMovie } from '../services/tmdb.js';
 import { computeResult } from '../utils/scoring.js';
 import { makeJoinCode } from '../utils/joinCode.js';
 import {
-  validateNight, validateNightUpdate,
-  validateSuggestion, validateVote,
+  validate,
+  NightInput,
+  NightUpdateInput,
+  SuggestionInput,
+  BallotInput,
 } from '../middleware/validate.js';
 
 // Every route here runs after requireAuth (see app.js), so req.userId is set.
@@ -41,7 +44,7 @@ nightsRouter.get('/', async (req, res) => {
 });
 
 // POST /api/nights: create; I become the owner and first member
-nightsRouter.post('/', validateNight, async (req, res) => {
+nightsRouter.post('/', validate(NightInput), async (req, res) => {
   const { title, maxRuntimeMin } = req.body;
 
   // Codes are random; try again on the rare clash
@@ -50,7 +53,7 @@ nightsRouter.post('/', validateNight, async (req, res) => {
 
   const night = await Night.create({
     owner: req.userId, // owner comes from the token, never the body
-    title: title.trim(),
+    title, // zod already trimmed it
     maxRuntimeMin,
     joinCode,
     members: [req.userId],
@@ -84,14 +87,14 @@ nightsRouter.get('/:id', async (req, res) => {
 });
 
 // PATCH /api/nights/:id: owner only; changes only the fields sent
-nightsRouter.patch('/:id', validateNightUpdate, async (req, res) => {
+nightsRouter.patch('/:id', validate(NightUpdateInput), async (req, res) => {
   const night = await findMyNight(req);
   if (!night) return notFound(res);
   if (!isOwner(night, req)) {
     return res.status(403).json({ error: 'Only the owner can edit this night' });
   }
   const { title, maxRuntimeMin, status } = req.body;
-  if (title !== undefined) night.title = title.trim();
+  if (title !== undefined) night.title = title; // zod already trimmed it
   if (maxRuntimeMin !== undefined) night.maxRuntimeMin = maxRuntimeMin;
   if (status !== undefined) night.status = status;
   await night.save();
@@ -115,7 +118,7 @@ nightsRouter.delete('/:id', async (req, res) => {
 
 // POST /api/nights/:id/suggestions  { tmdbId }
 // The server looks the film up on TMDB, so runtime and rating can't be faked.
-nightsRouter.post('/:id/suggestions', validateSuggestion, async (req, res) => {
+nightsRouter.post('/:id/suggestions', validate(SuggestionInput), async (req, res) => {
   const night = await findMyNight(req);
   if (!night) return notFound(res);
   if (night.status === 'closed') {
@@ -177,16 +180,20 @@ nightsRouter.get('/:id/ballot', async (req, res) => {
 
 // PUT /api/nights/:id/ballot  { ranking: [id1, id2, id3], veto: id | null }
 // PUT replaces the whole ballot: send it all every time.
-nightsRouter.put('/:id/ballot', validateVote, async (req, res) => {
+nightsRouter.put('/:id/ballot', validate(BallotInput), async (req, res) => {
   const night = await findMyNight(req);
   if (!night) return notFound(res);
   if (night.status === 'closed') {
     return res.status(400).json({ error: 'Voting is closed for this night' });
   }
 
-  const { ranking = [], veto = null } = req.body;
+  const { ranking, veto } = req.body; // zod already set the defaults ([] and null)
   const ids = veto ? [...ranking, veto] : ranking;
-  const found = await Suggestion.countDocuments({ _id: { $in: ids }, night: night._id });
+  // mongoose.trusted -> our own $in, so sanitizeFilter (server.js) doesn't block it
+  const found = await Suggestion.countDocuments({
+    _id: mongoose.trusted({ $in: ids }),
+    night: night._id,
+  });
   if (found !== ids.length) {
     return res.status(400).json({ error: 'Every film must be a suggestion in this night' });
   }

@@ -1,6 +1,6 @@
 import express from 'express';
 import { Night } from '../models/Night.js';
-import { validateJoin } from '../middleware/validate.js';
+import { validate, JoinInput } from '../middleware/validate.js';
 
 // Joining a night with its code creates a membership.
 // The URL names the thing (memberships); POST says "create one".
@@ -9,8 +9,8 @@ const membershipsRouter = express.Router();
 
 // POST /api/memberships  { joinCode }
 // 201 joined · 200 already a member · 404 bad code · 400 closed night
-membershipsRouter.post('/', validateJoin, async (req, res) => {
-  const joinCode = req.body.joinCode.trim().toUpperCase();
+membershipsRouter.post('/', validate(JoinInput), async (req, res) => {
+  const { joinCode } = req.body; // zod already trimmed and uppercased it
   const night = await Night.findOne({ joinCode });
   if (!night) return res.status(404).json({ error: 'No night with that code' });
 

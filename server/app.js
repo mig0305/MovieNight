@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { logger } from './middleware/logger.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -13,9 +15,27 @@ import membershipsRouter from './routes/memberships.js';
 const app = express();
 
 const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
+
+// S21 rate limits
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60_000, // 15 minutes
+  limit: 300,
+  message: { error: 'Too many requests. Try again later.' },
+});
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 5,
+  skipSuccessfulRequests: true, // only failed logins count
+  message: { error: 'Too many attempts. Try again later.' },
+});
+
+app.use(helmet()); // first: secure headers, removes X-Powered-By
+app.set('trust proxy', 1);
 app.use(cors({ origin: CLIENT_ORIGIN }));
-app.use(express.json());
+app.use(express.json({ limit: '10kb' })); // cap body size
 app.use(logger);
+app.use('/api', apiLimiter);
+app.use('/api/auth/login', loginLimiter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
