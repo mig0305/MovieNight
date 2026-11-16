@@ -2,8 +2,9 @@ import { useState } from "react";
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 
-import { Navbar } from "./components/Navbar";
+import { Navbar } from "./components/NavBar";
 import DiscoverPage from "./pages/DiscoverPage";
+import ConnectionTestPage from "./pages/ConnectionTestPage";
 
 const MovieDetailsPage = lazy(() =>
     import("./pages/MovieDetailsPage")
@@ -578,6 +579,10 @@ function App() {
                 >
                 <Suspense fallback={<LoadingIndicator text="Opening page..." />}>
                     <Routes>
+                        <Route
+                            path="/connection-test"
+                            element={<ConnectionTestPage />}
+                        />
 
                         <Route
                             path="/"
