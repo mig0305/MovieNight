@@ -1,60 +1,88 @@
+export const TOKEN_KEY = "movieNightToken";
+export const AUTH_EXPIRED_EVENT = "movie-night:auth-expired";
+
+// Empty by default: requests use the existing Vite proxy.
+// If configured later, this should contain only the backend origin,
+// for example https://api.example.com, without /api.
+const API_ORIGIN = (
+    import.meta.env.VITE_API_URL || ""
+).replace(/\/+$/, "");
+
 export async function apiRequest(path, options = {}) {
-  const { token, body, headers, ...requestOptions } = options;
+    const {
+        body,
+        headers,
+        authenticated = true,
+        token: suppliedToken,
+        ...requestOptions
+    } = options;
 
-  let response;
+    const token = authenticated
+        ? suppliedToken ?? localStorage.getItem(TOKEN_KEY)
+        : null;
 
-  try {
-    response = await fetch(`/api${path}`, {
-      ...requestOptions,
+    const requestHeaders = new Headers(headers);
 
-      headers: {
-        ...(body !== undefined
-          ? { 'Content-Type': 'application/json' }
-          : {}),
-
-        ...(token
-          ? { Authorization: `Bearer ${token}` }
-          : {}),
-
-        ...headers,
-      },
-
-      ...(body !== undefined
-        ? { body: JSON.stringify(body) }
-        : {}),
-    });
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw error;
+    if (body !== undefined) {
+        requestHeaders.set("Content-Type", "application/json");
     }
 
-    throw new Error(
-      'Cannot reach the API. Check that the frontend and backend are running.'
-    );
-  }
+    if (token) {
+        requestHeaders.set("Authorization", `Bearer ${token}`);
+    }
 
-  // Some successful operations return no response body.
-  if (response.status === 204 && response.ok) {
-    return null;
-  }
+    let response;
 
-  const data = await response.json().catch(() => null);
+    try {
+        response = await fetch(`${API_ORIGIN}/api${path}`, {
+            ...requestOptions,
+            headers: requestHeaders,
+            ...(body !== undefined
+                ? { body: JSON.stringify(body) }
+                : {})
+        });
+    } catch (error) {
+        if (error.name === "AbortError") {
+            throw error;
+        }
 
-  if (!response.ok) {
-    const message =
-      data?.error ||
-      data?.message ||
-      `API request failed (${response.status}). Check the server terminal.`;
+        throw new Error(
+            "Cannot reach the API. Check that the backend is running."
+        );
+    }
 
-    const error = new Error(message);
-    error.status = response.status;
+    // Only authenticated requests trigger session expiration.
+    // Wrong credentials on the login form remain a form error.
+    if (response.status === 401 && authenticated && token) {
+        window.dispatchEvent(
+            new CustomEvent(AUTH_EXPIRED_EVENT, {
+                detail: { token }
+            })
+        );
+    }
 
-    throw error;
-  }
+    if (response.status === 204 && response.ok) {
+        return null;
+    }
 
-  if (data === null) {
-    throw new Error('The API returned an empty or invalid JSON response.');
-  }
+    const data = await response.json().catch(() => null);
 
-  return data;
+    if (!response.ok) {
+        const error = new Error(
+            data?.error ||
+            data?.message ||
+            `API request failed (${response.status}).`
+        );
+
+        error.status = response.status;
+        throw error;
+    }
+
+    if (data === null) {
+        throw new Error(
+            "The API returned an empty or invalid JSON response."
+        );
+    }
+
+    return data;
 }

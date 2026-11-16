@@ -1,15 +1,21 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/useAuth";
 
-export default function LoginPage({ onAuthSuccess }) {
+export default function LoginPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
 
+    const { login } = useAuth();
     const navigate = useNavigate();
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
+
+        if (loading) return;
+
         setError("");
 
         const cleanEmail = email.trim().toLowerCase();
@@ -19,28 +25,32 @@ export default function LoginPage({ onAuthSuccess }) {
             return;
         }
 
-        // TEMPORARY: frontend-only login preview.
-        // The backend will verify credentials later.
-        onAuthSuccess({
-            email: cleanEmail,
-            displayName: cleanEmail.split("@")[0]
-        });
+        setLoading(true);
 
-        setPassword("");
-        navigate("/");
+        try {
+            await login(cleanEmail, password);
+            setPassword("");
+            navigate("/", { replace: true });
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
     }
 
     return (
         <section className="auth-page">
             <div className="auth-card">
-
                 <h1>Welcome Back</h1>
 
                 <p className="auth-subtitle">
                     Log in to plan your next movie night.
                 </p>
 
-                <form className="auth-form" onSubmit={handleSubmit} autoComplete="off">
+                <form
+                    className="auth-form"
+                    onSubmit={handleSubmit}
+                >
                     <label htmlFor="login-email">
                         Email
                     </label>
@@ -48,9 +58,12 @@ export default function LoginPage({ onAuthSuccess }) {
                     <input
                         id="login-email"
                         type="email"
+                        autoComplete="username"
                         placeholder="Enter your email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        maxLength={200}
+                        disabled={loading}
                         required
                     />
 
@@ -61,9 +74,12 @@ export default function LoginPage({ onAuthSuccess }) {
                     <input
                         id="login-password"
                         type="password"
+                        autoComplete="current-password"
                         placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
+                        maxLength={200}
+                        disabled={loading}
                         required
                     />
 
@@ -73,8 +89,8 @@ export default function LoginPage({ onAuthSuccess }) {
                         </p>
                     )}
 
-                    <button type="submit">
-                        Log In 
+                    <button type="submit" disabled={loading}>
+                        {loading ? "Logging in..." : "Log In"}
                     </button>
                 </form>
 
@@ -82,7 +98,6 @@ export default function LoginPage({ onAuthSuccess }) {
                     Don't have an account?{" "}
                     <Link to="/signup">Sign up</Link>
                 </p>
-
             </div>
         </section>
     );

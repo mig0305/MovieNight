@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { Navbar } from "./components/NavBar";
 import DiscoverPage from "./pages/DiscoverPage";
 import ConnectionTestPage from "./pages/ConnectionTestPage";
+import { useAuth } from "./auth/useAuth";
 
 const MovieDetailsPage = lazy(() =>
     import("./pages/MovieDetailsPage")
@@ -56,17 +57,13 @@ import LoadingIndicator from "./components/LoadingIndicator";
 
 
 function App() {
-
-    // Frontend-only authentication preview
-    const [currentUser, setCurrentUser] = useState(null);
-    function handleAuthSuccess(user) {
-        setCurrentUser(user);
-    }
-
-    function handleLogout() {
-        setCurrentUser(null);
-    }
-
+    
+    const {
+        currentUser,
+        authLoading,
+        authError,
+        logout
+    } = useAuth();
     // Temporary frontend-only storage for movie nights
     const [nights, setNights] = useState([]);
     const [suggestions, setSuggestions] = useState([]);
@@ -558,6 +555,39 @@ function App() {
 
         setWatchlist(updatedWatchlist);
     }
+    if (authLoading) {
+        return (
+            <LoadingIndicator text="Checking your session..." />
+        );
+    }
+
+    if (authError) {
+        return (
+            <section className="auth-page">
+                <div className="auth-card">
+                    <h1>Session verification unavailable</h1>
+
+                    <p className="auth-error" role="alert">
+                        {authError}
+                    </p>
+
+                    <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                    >
+                        Retry
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={logout}
+                    >
+                        Return to signed-out mode
+                    </button>
+                </div>
+            </section>
+        );
+    }
 
     return (
         <BrowserRouter>
@@ -569,7 +599,7 @@ function App() {
 
                 <Navbar
                     currentUser={currentUser}
-                    onLogout={handleLogout}
+                    onLogout={logout}
                 />
               
                 <main
@@ -607,9 +637,7 @@ function App() {
                             element={
                                 currentUser
                                     ? <Navigate to="/" replace />
-                                    : <LoginPage
-                                        onAuthSuccess={handleAuthSuccess}
-                                      />
+                                    : <LoginPage />
                             }
                         />
 
@@ -618,9 +646,7 @@ function App() {
                             element={
                                 currentUser
                                     ? <Navigate to="/" replace />
-                                    : <SignupPage
-                                        onAuthSuccess={handleAuthSuccess}
-                                      />
+                                    : <SignupPage />
                             }
                         />
                         
