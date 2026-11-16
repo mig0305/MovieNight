@@ -1,42 +1,57 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-export default function JoinNightPage({ onJoinNight }) {
+import { joinNight } from "../api/nights";
+
+export default function JoinNightPage() {
     const [joinCode, setJoinCode] = useState("");
     const [error, setError] = useState("");
+    const [submitting, setSubmitting] = useState(false);
 
     const navigate = useNavigate();
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
+
+        if (submitting) return;
+
         setError("");
 
         const code = joinCode.trim().toUpperCase();
 
-        if (code.length !== 6) {
-            setError("Please enter a 6-character join code.");
+        if (!/^[A-Z0-9]{6}$/.test(code)) {
+            setError(
+                "Please enter a valid 6-character join code."
+            );
             return;
         }
 
-        const result = onJoinNight(code);
+        setSubmitting(true);
 
-        if (!result.success) {
-            setError(result.message);
-            return;
+        try {
+            const night = await joinNight(code);
+
+            if (!night?._id) {
+                throw new Error(
+                    "The API did not return a valid night."
+                );
+            }
+
+            navigate("/nights", { replace: true });
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSubmitting(false);
         }
-
-        navigate("/nights");
     }
 
     return (
         <section className="night-form-page">
-
             <Link to="/nights" className="back-link">
                 ← Back to My Nights
             </Link>
 
             <div className="night-form-card">
-
                 <h1>Join a Movie Night</h1>
 
                 <p className="night-description">
@@ -59,9 +74,12 @@ export default function JoinNightPage({ onJoinNight }) {
                         placeholder="e.g. ABC123"
                         value={joinCode}
                         onChange={(e) =>
-                            setJoinCode(e.target.value.toUpperCase())
+                            setJoinCode(
+                                e.target.value.toUpperCase()
+                            )
                         }
                         maxLength={6}
+                        disabled={submitting}
                         required
                     />
 
@@ -71,11 +89,15 @@ export default function JoinNightPage({ onJoinNight }) {
                         </p>
                     )}
 
-                    <button type="submit">
-                        Join Night
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                    >
+                        {submitting
+                            ? "Joining Night..."
+                            : "Join Night"}
                     </button>
                 </form>
-
             </div>
         </section>
     );

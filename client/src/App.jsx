@@ -31,8 +31,8 @@ const JoinNightPage = lazy(() =>
     import("./pages/JoinNightPage")
 );
 
-const NightRoomPage = lazy(() =>
-    import("./pages/NightRoomPage")
+const NightOverviewPage = lazy(() =>
+    import("./pages/NightOverviewPage")
 );
 
 const VotePage = lazy(() =>
@@ -69,90 +69,6 @@ function App() {
     const [suggestions, setSuggestions] = useState([]);
     const [votes, setVotes] = useState([]);
     const [watchlist, setWatchlist] = useState([]);
-
-    // Create a new movie night
-    function handleCreateNight({ title, maxRuntimeMin }) {
-
-        // Generate a unique 6-character join code
-        const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        let code;
-
-        do {
-            code = "";
-
-            for (let i = 0; i < 6; i++) {
-                const index = Math.floor(
-                    Math.random() * characters.length
-                );
-
-                code += characters[index];
-            }
-        } while (nights.some((night) => night.joinCode === code));
-
-        const newNight = {
-            id: String(Date.now()),
-            title: title,
-            maxRuntimeMin: maxRuntimeMin,
-            joinCode: code,
-            ownerEmail: currentUser.email,
-            memberEmails: [currentUser.email],
-            status: "active",
-            createdAt: new Date().toISOString()
-        };
-
-        setNights([...nights, newNight]);
-    }
-
-    // Join an existing movie night
-    function handleJoinNight(code) {
-
-        const night = nights.find(
-            (night) => night.joinCode === code
-        );
-
-        if (!night) {
-            return {
-                success: false,
-                message: "No movie night found with this code."
-            };
-        }
-
-        if (night.status !== "active") {
-            return {
-                success: false,
-                message: "This movie night is already completed."
-            };
-        }
-
-        if (night.memberEmails.includes(currentUser.email)) {
-            return {
-                success: false,
-                message: "You are already a member of this night."
-            };
-        }
-
-        const updatedNights = nights.map((n) => {
-
-            if (n.id === night.id) {
-                return {
-                    ...n,
-                    memberEmails: [
-                        ...n.memberEmails,
-                        currentUser.email
-                    ]
-                };
-            }
-
-            return n;
-        });
-
-        setNights(updatedNights);
-
-        return {
-            success: true,
-            message: "Successfully joined the movie night."
-        };
-    }
 
     function handleAddSuggestion(nightId, movie) {
 
@@ -655,7 +571,6 @@ function App() {
                             element={
                                 currentUser ? (
                                     <NightsPage
-                                        nights={nights}
                                         currentUser={currentUser}
                                     />
                                 ) : (
@@ -668,9 +583,7 @@ function App() {
                             path="/nights/new"
                             element={
                                 currentUser ? (
-                                    <CreateNightPage
-                                        onCreateNight={handleCreateNight}
-                                    />
+                                    <CreateNightPage/>
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )
@@ -681,9 +594,7 @@ function App() {
                             path="/nights/join"
                             element={
                                 currentUser ? (
-                                    <JoinNightPage
-                                        onJoinNight={handleJoinNight}
-                                    />
+                                    <JoinNightPage/>
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )
@@ -711,15 +622,7 @@ function App() {
                             path="/nights/:id"
                             element={
                                 currentUser ? (
-                                    <NightRoomPage
-                                        nights={nights}
-                                        suggestions={suggestions}
-                                        votes={votes}
-                                        currentUser={currentUser}
-                                        onAddSuggestion={handleAddSuggestion}
-                                        onRemoveSuggestion={handleRemoveSuggestion}
-                                        onFinalizeNight={handleFinalizeNight}
-                                    />
+                                    <NightOverviewPage />
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )

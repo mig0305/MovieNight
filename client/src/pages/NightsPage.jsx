@@ -1,38 +1,77 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
 import { NightCard } from "../components/NightCard";
+import LoadingIndicator from "../components/LoadingIndicator";
+import { getMyNights } from "../api/nights";
 
-export default function NightsPage({ nights, currentUser }) {
+export default function NightsPage({ currentUser }) {
+    const [nights, setNights] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [retryKey, setRetryKey] = useState(0);
 
-    // Only show nights this user belongs to
-    const myNights = nights.filter((night) =>
-        night.memberEmails.includes(currentUser.email)
+    useEffect(() => {
+        const controller = new AbortController();
+
+        async function loadNights() {
+            setLoading(true);
+            setError("");
+
+            try {
+                const data = await getMyNights({
+                    signal: controller.signal
+                });
+
+                if (!Array.isArray(data)) {
+                    throw new Error(
+                        "The API returned an invalid nights list."
+                    );
+                }
+
+                if (!controller.signal.aborted) {
+                    setNights(data);
+                }
+            } catch (err) {
+                if (!controller.signal.aborted) {
+                    setError(err.message);
+                }
+            } finally {
+                if (!controller.signal.aborted) {
+                    setLoading(false);
+                }
+            }
+        }
+
+        loadNights();
+
+        return () => controller.abort();
+    }, [currentUser.id, retryKey]);
+
+    const activeNights = nights.filter(
+        (night) => night.status === "open"
     );
 
-    // Separate active and completed nights
-    const activeNights = myNights.filter(
-        (night) => night.status === "active"
+    const pastNights = nights.filter(
+        (night) => night.status === "closed"
     );
-        
-    const pastNights = myNights
-        .filter((night) => night.status === "completed")
-        .sort(
-            (a, b) =>
-                new Date(b.finalizedAt) - new Date(a.finalizedAt)
-        );
 
     return (
         <section className="nights-page">
-
             <div className="nights-header">
                 <div>
                     <h1>My Nights</h1>
                     <p>
-                        Plan your next movie night and manage your groups.
+                        Plan your next movie night and manage
+                        your groups.
                     </p>
                 </div>
 
                 <div className="night-actions">
-                    <Link to="/nights/new" className="night-button">
+                    <Link
+                        to="/nights/new"
+                        className="night-button"
+                    >
                         + Create Night
                     </Link>
 
@@ -45,56 +84,80 @@ export default function NightsPage({ nights, currentUser }) {
                 </div>
             </div>
 
-            <div className="night-section">
-                <h2>Active Nights ({activeNights.length})</h2>
+            {loading ? (
+                <LoadingIndicator
+                    text="Loading your movie nights..."
+                />
+            ) : error ? (
+                <div className="night-empty">
+                    <p role="alert">{error}</p>
 
-                {activeNights.length === 0 ? (
-                    <div className="night-empty">
-                        <p>You don't have any active movie nights yet.</p>
-                        <p>
-                            Create a night or join your friends
-                            using their invitation code.
-                        </p>
+                    <button
+                        type="button"
+                        onClick={() =>
+                            setRetryKey((value) => value + 1)
+                        }
+                    >
+                        Retry
+                    </button>
+                </div>
+            ) : (
+                <>
+                    <div className="night-section">
+                        <h2>
+                            Active Nights ({activeNights.length})
+                        </h2>
+
+                        {activeNights.length === 0 ? (
+                            <div className="night-empty">
+                                <p>
+                                    You don't have any active
+                                    movie nights yet.
+                                </p>
+                                <p>
+                                    Create a night or join your
+                                    friends using their
+                                    invitation code.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="night-grid">
+                                {activeNights.map((night) => (
+                                    <NightCard
+                                        key={night._id}
+                                        night={night}
+                                        currentUser={currentUser}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
-                ) : (
-                    <div className="night-grid">
-                        {activeNights.map((night) => (
-                            <NightCard
-                                key={night.id}
-                                night={night}
-                                currentUser={currentUser}
-                            />
-                        ))}
+
+                    <div className="night-section">
+                        <h2>
+                            Past Nights ({pastNights.length})
+                        </h2>
+
+                        {pastNights.length === 0 ? (
+                            <div className="night-empty">
+                                <p>
+                                    No closed movie nights yet.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="night-grid">
+                                {pastNights.map((night) => (
+                                    <NightCard
+                                        key={night._id}
+                                        night={night}
+                                        currentUser={currentUser}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
-
-            <div className="night-section">
-                <h2>Past Nights ({pastNights.length})</h2>
-
-                <Link to="/history" className="history-link">
-                    Browse Complete History
-                </Link>
-
-                {pastNights.length === 0 ? (
-                    <div className="night-empty">
-                        <p>
-                            No completed movie nights yet.
-                        </p>
-                    </div>
-                ) : (
-                    <div className="night-grid">
-                        {pastNights.map((night) => (
-                            <NightCard
-                                key={night.id}
-                                night={night}
-                                currentUser={currentUser}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
-
+                </>
+            )}
         </section>
     );
 }
