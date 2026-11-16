@@ -130,6 +130,26 @@ nightsRouter.post('/:id/suggestions', validate(SuggestionInput), async (req, res
   }
 
   const movie = await getMovie(tmdbId); // 404 if TMDB doesn't know it
+
+  // Reject movies with missing or invalid runtimes.
+  if (
+      !Number.isInteger(movie.runtime) ||
+      movie.runtime <= 0
+  ) {
+      return res.status(400).json({
+          error: "This movie has no valid runtime on TMDB"
+      });
+  }
+
+  // Enforce this night's maximum runtime on the server.
+  if (movie.runtime > night.maxRuntimeMin) {
+      return res.status(400).json({
+          error:
+              `${movie.title} is ${movie.runtime} minutes long; ` +
+              `this night allows at most ${night.maxRuntimeMin} minutes`
+      });
+  }
+
   const suggestion = await Suggestion.create({
     night: night._id,
     tmdbId: movie.tmdbId,

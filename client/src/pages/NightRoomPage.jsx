@@ -1,142 +1,290 @@
-import { useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 
 import { SearchBar } from "../components/SearchBar";
 import { MovieCard } from "../components/MovieCard";
 import LoadingIndicator from "../components/LoadingIndicator";
 
+import { IMAGE_BASE_URL } from "../api/tmdb";
+import { useAuth } from "../auth/useAuth";
 
-import { searchMovies, getMovieDetails, IMAGE_BASE_URL } from "../api/tmdb";
+import {
+    getNight,
+    addNightSuggestion,
+    removeNightSuggestion
+} from "../api/nights";
 
+import {
+    searchNightMovies,
+    getNightMovie
+} from "../api/movies";
 
-export default function NightRoomPage({
-    nights,
-    suggestions,
-    votes,
-    currentUser,
-    onAddSuggestion,
-    onRemoveSuggestion,
-    onFinalizeNight
-}) {
+export default function NightRoomPage() {
     const { id } = useParams();
-    const navigate = useNavigate();
-    const [closeError, setCloseError] = useState("");
+    const { currentUser } = useAuth();
+
+    const [night, setNight] = useState(null);
+    const [nightLoading, setNightLoading] = useState(true);
+    const [nightError, setNightError] = useState("");
+    const [syncError, setSyncError] = useState("");
+    const [refreshKey, setRefreshKey] = useState(0);
+
     const [movies, setMovies] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [searchLoading, setSearchLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
     const [searchError, setSearchError] = useState("");
+
     const [addingId, setAddingId] = useState(null);
+    const [removingId, setRemovingId] = useState(null);
     const [message, setMessage] = useState("");
     const [messageIsError, setMessageIsError] = useState(false);
 
-    // Find this movie night
-    const night = nights.find((n) => n.id === id);
+    const searchRequestId = useRef(0);
 
-    // Find suggestions belonging to this night
-    const nightSuggestions = suggestions.filter((s) => s.nightId === id);
+    // Load real room data, then poll every 15 seconds.
+    useEffect(() => {
+        const controller = new AbortController();
+        let inFlight = false;
 
-    const nightVotes = votes.filter(
-        (v) => v.nightId === id
-    );
+        async function loadRoom(initial = false) {
+            if (inFlight) return;
 
-    const votingPercentage = night
-        ? Math.round(
-            (nightVotes.length / night.memberEmails.length) * 100
-        )
-        : 0;
+            inFlight = true;
 
+            if (initial) {
+                setNightLoading(true);
+                setNightError("");
+                setSyncError("");
+            }
 
-    const hasVoted = nightVotes.some(
-        (v) => v.userEmail === currentUser.email
-    );
+            try {
+                const data = await getNight(id, {
+                    signal: controller.signal
+                });
 
-    // Search TMDB
+                if (
+                    !data?._id ||
+                    !Array.isArray(data.members) ||
+                    !Array.isArray(data.suggestions)
+                ) {
+                    throw new Error(
+                        "The API returned an invalid night room."
+                    );
+                }
+
+                if (!controller.signal.aborted) {
+                    setNight(data);
+                    setNightError("");
+                    setSyncError("");
+                }
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    if (initial) {
+                        setNightError(error.message);
+                    } else {
+                        setSyncError(
+                            "Could not refresh. Showing the last loaded data."
+                        );
+                    }
+                }
+            } finally {
+                inFlight = false;
+
+                if (initial && !controller.signal.aborted) {
+                    setNightLoading(false);
+                }
+            }
+        }
+
+        loadRoom(true);
+
+        const interval = setInterval(
+            () => loadRoom(false),
+            15000
+        );
+
+        return () => {
+            clearInterval(interval);
+            controller.abort();
+        };
+    }, [id, refreshKey]);
+
+    // Reset old search results when navigating to another room.
+    useEffect(() => {
+        searchRequestId.current += 1;
+        setMovies([]);
+        setHasSearched(false);
+        setSearchError("");
+        setMessage("");
+    }, [id]);
+
+    // Search TMDB through our Express backend.
     async function handleSearch(query) {
-        if (!query.trim()) return;
+        const requestId = ++searchRequestId.current;
 
-        setLoading(true);
+        setSearchLoading(true);
         setHasSearched(true);
         setSearchError("");
         setMovies([]);
 
         try {
-            const results = await searchMovies(query.trim());
-            setMovies(results);
-        } catch {
-            setSearchError("Could not search for movies.");
+            const data = await searchNightMovies(query);
+
+            // Ignore an older search that finished late.
+            if (requestId !== searchRequestId.current) {
+                return;
+            }
+
+            if (!Array.isArray(data?.results)) {
+                throw new Error(
+                    "The movie search returned invalid data."
+                );
+            }
+
+            setMovies(data.results);
+        } catch (error) {
+            if (requestId === searchRequestId.current) {
+                setSearchError(error.message);
+            }
         } finally {
-            setLoading(false);
+            if (requestId === searchRequestId.current) {
+                setSearchLoading(false);
+            }
         }
     }
 
-    // Fetch full details before suggesting a movie
+    // Save a suggestion to MongoDB.
     async function handleSuggest(movie) {
-        setAddingId(movie.id);
+        if (
+            !night ||
+            night.status !== "open" ||
+            addingId !== null ||
+            removingId !== null
+        ) {
+            return;
+        }
+
+        setAddingId(movie.tmdbId);
         setMessage("");
 
         try {
-            const details = await getMovieDetails(movie.id);
+            const details = await getNightMovie(movie.tmdbId);
 
-            const result = onAddSuggestion(id, details);
+            if (
+                !Number.isInteger(details.runtime) ||
+                details.runtime <= 0
+            ) {
+                throw new Error(
+                    "This movie has no valid runtime on TMDB."
+                );
+            }
 
-            setMessage(result.message);
-            setMessageIsError(!result.success);
-        } catch {
-            setMessage("Could not load movie details.");
+            if (details.runtime > night.maxRuntimeMin) {
+                throw new Error(
+                    `${details.title} is ${details.runtime} minutes long. ` +
+                    `This night's limit is ${night.maxRuntimeMin} minutes.`
+                );
+            }
+
+            await addNightSuggestion(id, movie.tmdbId);
+
+            setMessage(
+                `${details.title} was added successfully!`
+            );
+            setMessageIsError(false);
+
+            // Re-fetch the updated room from MongoDB.
+            setRefreshKey((value) => value + 1);
+        } catch (error) {
+            setMessage(error.message);
             setMessageIsError(true);
         } finally {
             setAddingId(null);
         }
     }
 
-    // Remove one of your own suggestions
-    function handleRemove(suggestionId) {
-        const result = onRemoveSuggestion(id, suggestionId);
-
-        setMessage(result.message);
-        setMessageIsError(!result.success);
-    }
-
-    // Invalid night
-    if (!night) {
-        return (
-            <section className="night-room-page">
-                <h1>Movie night not found</h1>
-                <Link to="/nights" className="back-link">
-                    Back to My Nights
-                </Link>
-            </section>
-        );
-    }
-
-    // Membership check
-    if (!night.memberEmails.includes(currentUser.email)) {
-        return (
-            <section className="night-room-page">
-                <h1>Access denied</h1>
-                <p>You are not a member of this movie night.</p>
-                <Link to="/nights" className="back-link">
-                    Back to My Nights
-                </Link>
-            </section>
-        );
-    }
-
-    function handleCloseVoting() {
-
-        const result = onFinalizeNight(id);
-
-        if (!result.success) {
-            setCloseError(result.message);
+    // Delete a suggestion from MongoDB.
+    async function handleRemove(suggestionId) {
+        if (removingId !== null || addingId !== null) {
             return;
         }
 
-        navigate(`/nights/${id}/results`);
+        setRemovingId(suggestionId);
+        setMessage("");
+
+        try {
+            await removeNightSuggestion(id, suggestionId);
+
+            setMessage("Movie suggestion removed.");
+            setMessageIsError(false);
+
+            setRefreshKey((value) => value + 1);
+        } catch (error) {
+            setMessage(error.message);
+            setMessageIsError(true);
+        } finally {
+            setRemovingId(null);
+        }
     }
+
+    if (nightLoading) {
+        return (
+            <LoadingIndicator text="Loading movie night..." />
+        );
+    }
+
+    if (nightError || !night) {
+        return (
+            <section className="night-room-page">
+                <Link to="/nights" className="back-link">
+                    ← Back to My Nights
+                </Link>
+
+                <h1>Unable to open movie night</h1>
+
+                <p
+                    className="room-message error"
+                    role="alert"
+                >
+                    {nightError || "Movie night not found."}
+                </p>
+
+                <button
+                    type="button"
+                    className="night-button secondary"
+                    onClick={() =>
+                        setRefreshKey((value) => value + 1)
+                    }
+                >
+                    Retry
+                </button>
+            </section>
+        );
+    }
+
+    const isOpen = night.status === "open";
+
+    const ownerId =
+        night.owner?._id ?? night.owner;
+
+    const isOwner =
+        night.isOwner ??
+        (String(ownerId) === String(currentUser.id));
+
+    const memberCount = night.members.length;
+    const suggestions = night.suggestions;
+
+    const ballotCount = Math.min(
+        night.ballotsCast ?? 0,
+        memberCount
+    );
+
+    const votingPercentage = memberCount > 0
+        ? Math.round((ballotCount / memberCount) * 100)
+        : 0;
 
     return (
         <section className="night-room-page">
-
             <Link to="/nights" className="back-link">
                 ← Back to My Nights
             </Link>
@@ -146,29 +294,36 @@ export default function NightRoomPage({
             <div className="room-header">
                 <div>
                     <h1>{night.title}</h1>
+
                     <p>
-                        {night.ownerEmail === currentUser.email
+                        {isOwner
                             ? "You are hosting this movie night."
                             : "You are a member of this movie night."}
                     </p>
                 </div>
 
-                <span className={`night-status ${night.status}`}>
-                    {night.status === "active"
-                        ? "Active"
-                        : "Completed"}
+                <span
+                    className={
+                        `night-status ${
+                            isOpen ? "active" : "completed"
+                        }`
+                    }
+                >
+                    {isOpen ? "Active" : "Closed"}
                 </span>
             </div>
 
             <div className="room-stats">
                 <div className="room-stat">
                     <span>Maximum runtime</span>
-                    <strong>{night.maxRuntimeMin} min</strong>
+                    <strong>
+                        {night.maxRuntimeMin} min
+                    </strong>
                 </div>
 
                 <div className="room-stat">
                     <span>Members</span>
-                    <strong>{night.memberEmails.length}</strong>
+                    <strong>{memberCount}</strong>
                 </div>
 
                 <div className="room-stat">
@@ -180,33 +335,61 @@ export default function NightRoomPage({
             {/* GROUP MEMBERS */}
 
             <div className="room-section">
-                <h2>Group Members</h2>
+                <div className="room-header">
+                    <h2>Group Members</h2>
+
+                    <button
+                        type="button"
+                        className="night-button secondary"
+                        onClick={() =>
+                            setRefreshKey((value) => value + 1)
+                        }
+                    >
+                        Refresh Room
+                    </button>
+                </div>
+
+                {syncError && (
+                    <p
+                        className="room-message error"
+                        role="alert"
+                    >
+                        {syncError}
+                    </p>
+                )}
 
                 <div className="room-members">
-                    {night.memberEmails.map((email) => (
-                        <div className="room-member" key={email}>
+                    {night.members.map((member) => (
+                        <div
+                            className="room-member"
+                            key={member._id}
+                        >
                             <span>
-                                {email === currentUser.email
-                                    ? `${email} (You)`
-                                    : email}
+                                {member.displayName}
+                                {String(member._id) ===
+                                String(currentUser.id)
+                                    ? " (You)"
+                                    : ""}
                             </span>
 
-                            {email === night.ownerEmail && (
+                            {String(member._id) ===
+                                String(ownerId) && (
                                 <strong>Host</strong>
                             )}
                         </div>
                     ))}
                 </div>
             </div>
-            
-            {/* GROUP VOTING */}
+
+            {/* READ-ONLY VOTING PROGRESS */}
 
             <div className="room-section voting-section">
                 <h2>Group Voting</h2>
 
                 <p className="room-hint">
-                    {nightVotes.length} of {night.memberEmails.length} members
-                    have submitted their votes.
+                    {ballotCount} of {memberCount} members
+                    have voted. Voting controls will be
+                    connected in Milestone 5.
                 </p>
 
                 <div
@@ -219,190 +402,140 @@ export default function NightRoomPage({
                 >
                     <div
                         className="voting-progress-fill"
-                        style={{ width: `${votingPercentage}%` }}
+                        style={{
+                            width: `${votingPercentage}%`
+                        }}
                     />
                 </div>
-
-                {night.status === "active" && (
-                    nightSuggestions.length >= 3 ? (
-                        <div className="voting-action">
-
-                            <p>
-                                {hasVoted
-                                    ? "Your ballot is saved. You can still update it."
-                                    : "Rank your top three movies and use your veto."}
-                            </p>
-
-                            <Link
-                                to={`/nights/${id}/vote`}
-                                className="night-button"
-                            >
-                                {hasVoted
-                                    ? "Update My Vote"
-                                    : "Cast My Vote"}
-                            </Link>
-
-                        </div>
-                    ) : (
-                        <p className="room-empty">
-                            At least three movie suggestions are needed
-                            before voting can begin.
-                        </p>
-                    )
-                )}
             </div>
 
-            {/* HOST FINALIZATION CONTROLS */}
-
-            {night.status === "active" &&
-                night.ownerEmail === currentUser.email && (
-
-                <div className="room-section finalize-section">
-
-                    <h2>Host Controls</h2>
-
-                    <p className="room-hint">
-                        {nightVotes.length} of {night.memberEmails.length}
-                        {" "}members have submitted their votes.
-                    </p>
-
-                    <p className="room-hint">
-                        Closing voting will calculate the winner and
-                        permanently finalize this movie night.
-                    </p>
-
-                    <button
-                        type="button"
-                        className="finalize-button"
-                        onClick={handleCloseVoting}
-                        disabled={
-                            nightVotes.length !== night.memberEmails.length ||
-                            nightSuggestions.length < 3
-                        }
-                    >
-                        Close Voting & Show Results
-                    </button>
-
-                    {closeError && (
-                        <p className="room-message error" role="alert">
-                            {closeError}
-                        </p>
-                    )}
-
-                </div>
-            )}
-
-            {night.status === "completed" && (
-                <div className="room-section completed-room">
-
-                    <h2>Voting Completed</h2>
-
-                    <p>
-                        The results have been finalized.
-                        See which movie won!
-                    </p>
-
-                    <Link
-                        to={`/nights/${id}/results`}
-                        className="night-button"
-                    >
-                        View Final Results
-                    </Link>
-
-                </div>
-            )}
-
-
-
-            {/* MOVIE SUGGESTIONS */}
+            {/* SAVED SUGGESTIONS */}
 
             <div className="room-section">
                 <h2>
-                    Suggested Movies ({nightSuggestions.length})
+                    Suggested Movies ({suggestions.length})
                 </h2>
 
-                {nightSuggestions.length === 0 ? (
+                {suggestions.length === 0 ? (
                     <p className="room-empty">
                         No movies suggested yet.
                         Be the first to suggest one!
                     </p>
                 ) : (
                     <div className="suggestions-list">
-                        {nightSuggestions.map((suggestion) => (
-                            <div
-                                className="suggestion-card"
-                                key={suggestion.id}
-                            >
-                                <Link to={`/movie/${suggestion.tmdbId}`} state={{ returnTo: `/nights/${id}` }}>
-                                    {suggestion.posterPath ? (
-                                        <img
-                                            src={
-                                                IMAGE_BASE_URL +
-                                                suggestion.posterPath
-                                            }
-                                            alt={suggestion.title}
-                                        />
-                                    ) : (
-                                        <div className="suggestion-no-poster">
-                                            No poster
-                                        </div>
-                                    )}
-                                </Link>
+                        {suggestions.map((suggestion) => {
+                            const addedById =
+                                suggestion.addedBy?._id ??
+                                suggestion.addedBy;
 
-                                <div className="suggestion-info">
-                                    <h3>
-                                        <Link to={`/movie/${suggestion.tmdbId}`} state={{ returnTo: `/nights/${id}` }}>
-                                            {suggestion.title}
-                                        </Link>
-                                    </h3>
+                            const canRemove = isOpen && (
+                                isOwner ||
+                                String(addedById) ===
+                                String(currentUser.id)
+                            );
 
-                                    <p>
-                                        Runtime: {suggestion.runtime} min
-                                    </p>
+                            return (
+                                <div
+                                    className="suggestion-card"
+                                    key={suggestion._id}
+                                >
+                                    <Link
+                                        to={`/movie/${suggestion.tmdbId}`}
+                                        state={{
+                                            returnTo:
+                                                `/nights/${id}`
+                                        }}
+                                    >
+                                        {suggestion.posterPath ? (
+                                            <img
+                                                src={
+                                                    IMAGE_BASE_URL +
+                                                    suggestion.posterPath
+                                                }
+                                                alt={
+                                                    suggestion.title
+                                                }
+                                                loading="lazy"
+                                            />
+                                        ) : (
+                                            <div className="suggestion-no-poster">
+                                                No poster
+                                            </div>
+                                        )}
+                                    </Link>
 
-                                    <p>
-                                        TMDB rating:{" "}
-                                        {suggestion.voteAverage.toFixed(1)}/10
-                                    </p>
+                                    <div className="suggestion-info">
+                                        <h3>
+                                            <Link
+                                                to={`/movie/${suggestion.tmdbId}`}
+                                                state={{
+                                                    returnTo:
+                                                        `/nights/${id}`
+                                                }}
+                                            >
+                                                {suggestion.title}
+                                            </Link>
+                                        </h3>
 
-                                    <p>
-                                        Suggested by:{" "}
-                                        {suggestion.addedByEmail ===
-                                        currentUser.email
-                                            ? "You"
-                                            : suggestion.addedByEmail}
-                                    </p>
-                                </div>
+                                        <p>
+                                            Runtime:{" "}
+                                            {suggestion.runtime} min
+                                        </p>
 
-                                {suggestion.addedByEmail ===
-                                    currentUser.email &&
-                                    night.status === "active" && (
+                                        <p>
+                                            TMDB rating:{" "}
+                                            {suggestion.voteAverage.toFixed(1)}/10
+                                        </p>
+
+                                        <p>
+                                            Suggested by:{" "}
+                                            {String(addedById) ===
+                                            String(currentUser.id)
+                                                ? "You"
+                                                : suggestion.addedBy
+                                                    ?.displayName ??
+                                                    "Member"}
+                                        </p>
+                                    </div>
+
+                                    {canRemove && (
                                         <button
                                             type="button"
                                             className="remove-suggestion"
+                                            disabled={
+                                                removingId !== null ||
+                                                addingId !== null
+                                            }
                                             onClick={() =>
-                                                handleRemove(suggestion.id)
+                                                handleRemove(
+                                                    suggestion._id
+                                                )
                                             }
                                         >
-                                            Remove
+                                            {removingId === suggestion._id
+                                                ? "Removing..."
+                                                : "Remove"}
                                         </button>
                                     )}
-                            </div>
-                        ))}
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>
 
-            {/* SEARCH FOR NEW SUGGESTIONS */}
+            {/* SEARCH AND ADD MOVIES */}
 
-            {night.status === "active" && (
+            {isOpen ? (
                 <div className="room-section night-search-section">
                     <h2>Suggest a Movie</h2>
 
                     <p className="room-hint">
-                        Search TMDB for a movie.
-                        Films longer than {night.maxRuntimeMin} minutes
-                        cannot be added to this night.
+                        Search for a movie.
+                        Films longer than{" "}
+                        {night.maxRuntimeMin} minutes
+                        or without a valid runtime
+                        cannot be suggested.
                     </p>
 
                     <SearchBar onSearch={handleSearch} />
@@ -410,28 +543,38 @@ export default function NightRoomPage({
                     {message && (
                         <p
                             className={
-                                messageIsError
-                                    ? "room-message error"
-                                    : "room-message success"
+                                `room-message ${
+                                    messageIsError
+                                        ? "error"
+                                        : "success"
+                                }`
                             }
-                            role="status"
+                            role={
+                                messageIsError
+                                    ? "alert"
+                                    : "status"
+                            }
                         >
                             {message}
                         </p>
                     )}
 
-                    
-                    {loading && (
-                        <LoadingIndicator text="Searching movies..." />
+                    {searchLoading && (
+                        <LoadingIndicator
+                            text="Searching movies..."
+                        />
                     )}
 
                     {searchError && (
-                        <p className="error-message">
+                        <p
+                            className="error-message"
+                            role="alert"
+                        >
                             {searchError}
                         </p>
                     )}
 
-                    {!loading &&
+                    {!searchLoading &&
                         !searchError &&
                         hasSearched &&
                         movies.length === 0 && (
@@ -440,55 +583,68 @@ export default function NightRoomPage({
                             </p>
                         )}
 
-                    {!loading && !searchError && movies.length > 0 && (
-                        <div className="night-search-grid">
-                            {movies.map((movie, index) => {
-                                const alreadySuggested =
-                                    nightSuggestions.some(
-                                        (s) => s.tmdbId === movie.id
-                                    );
+                    {!searchLoading &&
+                        !searchError &&
+                        movies.length > 0 && (
+                            <div className="night-search-grid">
+                                {movies.map((movie, index) => {
+                                    const alreadySuggested =
+                                        suggestions.some(
+                                            (suggestion) =>
+                                                suggestion.tmdbId ===
+                                                movie.tmdbId
+                                        );
 
-                                return (
-                                    <div
-                                        className="night-search-item"
-                                        key={movie.id}
-                                    >
-                                        
-                                        <MovieCard
-                                            movie={movie}
-                                            delay={index * 0.05}
-                                            returnTo={`/nights/${id}`}
-                                        />
-          
-                                        <button
-                                            type="button"
-                                            className="suggest-button"
-                                            disabled={
-                                                addingId !== null ||
-                                                alreadySuggested
-                                            }
-                                            onClick={() => handleSuggest(movie)}
+                                    return (
+                                        <div
+                                            className="night-search-item"
+                                            key={movie.tmdbId}
                                         >
-                                            {alreadySuggested ? (
-                                                "Already Suggested"
-                                            ) : addingId === movie.id ? (
-                                                <span className="button-loading">
-                                                    <span className="mini-spinner"></span>
-                                                    Checking...
-                                                </span>
-                                            ) : (
-                                                "Suggest Movie"
-                                            )}
-                                        </button>
+                                            <MovieCard
+                                                movie={movie}
+                                                delay={index * 0.05}
+                                                returnTo={
+                                                    `/nights/${id}`
+                                                }
+                                            />
 
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                            <button
+                                                type="button"
+                                                className="suggest-button"
+                                                disabled={
+                                                    addingId !== null ||
+                                                    removingId !== null ||
+                                                    alreadySuggested
+                                                }
+                                                onClick={() =>
+                                                    handleSuggest(movie)
+                                                }
+                                            >
+                                                {alreadySuggested
+                                                    ? "Already Suggested"
+                                                    : addingId ===
+                                                        movie.tmdbId
+                                                        ? "Checking..."
+                                                        : "Suggest Movie"}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                </div>
+            ) : (
+                <div className="room-section completed-room">
+                    <h2>Movie Night Closed</h2>
+
+                    <p className="room-hint">
+                        Suggestions cannot be changed.
+                        Final results will be connected
+                        in Milestone 6.
+                    </p>
                 </div>
             )}
-
         </section>
     );
 }
+

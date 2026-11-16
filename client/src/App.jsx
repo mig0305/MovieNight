@@ -31,8 +31,8 @@ const JoinNightPage = lazy(() =>
     import("./pages/JoinNightPage")
 );
 
-const NightOverviewPage = lazy(() =>
-    import("./pages/NightOverviewPage")
+const NightRoomPage = lazy(() =>
+    import("./pages/NightRoomPage")
 );
 
 const VotePage = lazy(() =>
@@ -51,10 +51,7 @@ const HistoryPage = lazy(() =>
     import("./pages/HistoryPage")
 );
 
-import { calculateNightResults } from "./utils/calculateResults";
-
 import LoadingIndicator from "./components/LoadingIndicator";
-
 
 function App() {
     
@@ -65,153 +62,10 @@ function App() {
         logout
     } = useAuth();
     // Temporary frontend-only storage for movie nights
-    const [nights, setNights] = useState([]);
-    const [suggestions, setSuggestions] = useState([]);
+    const [nights] = useState([]);
+    const [suggestions] = useState([]);
     const [votes, setVotes] = useState([]);
     const [watchlist, setWatchlist] = useState([]);
-
-    function handleAddSuggestion(nightId, movie) {
-
-        const night = nights.find((n) => n.id === nightId);
-
-        // Check that the night exists and is active
-        if (!night || night.status !== "active") {
-            return {
-                success: false,
-                message: "This movie night is not available."
-            };
-        }
-
-        // Check group membership
-        if (
-            !currentUser ||
-            !night.memberEmails.includes(currentUser.email)
-        ) {
-            return {
-                success: false,
-                message: "You are not a member of this night."
-            };
-        }
-
-        // Check that TMDB provided a valid runtime
-        if (!Number.isInteger(movie.runtime) || movie.runtime <= 0) {
-            return {
-                success: false,
-                message: "This movie has no valid runtime on TMDB."
-            };
-        }
-
-        // Enforce the maximum runtime
-        if (movie.runtime > night.maxRuntimeMin) {
-            return {
-                success: false,
-                message: `${movie.title} is ${movie.runtime} minutes long.
-                        The limit is ${night.maxRuntimeMin} minutes.`
-            };
-        }
-
-        // Prevent the same film being suggested twice
-        const duplicate = suggestions.some(
-            (s) =>
-                s.nightId === nightId &&
-                s.tmdbId === movie.id
-        );
-
-        if (duplicate) {
-            return {
-                success: false,
-                message: "This movie has already been suggested."
-            };
-        }
-
-        // Create the suggestion
-        const newSuggestion = {
-            id: `${nightId}-${movie.id}`,
-            nightId: nightId,
-            tmdbId: movie.id,
-            title: movie.title,
-            posterPath: movie.poster_path,
-            runtime: movie.runtime,
-            voteAverage: movie.vote_average,
-            addedByEmail: currentUser.email
-        };
-
-        // Update React state
-        setSuggestions([...suggestions, newSuggestion]);
-
-        return {
-            success: true,
-            message: `${movie.title} was added successfully!`
-        };
-    }
-
-    function handleRemoveSuggestion(nightId, suggestionId) {
-
-        const night = nights.find((n) => n.id === nightId);
-
-        if (!night || night.status !== "active") {
-            return {
-                success: false,
-                message: "This movie night cannot be modified."
-            };
-        }
-
-        if (
-            !currentUser ||
-            !night.memberEmails.includes(currentUser.email)
-        ) {
-            return {
-                success: false,
-                message: "You are not a member of this night."
-            };
-        }
-
-        const suggestion = suggestions.find(
-            (s) =>
-                s.id === suggestionId &&
-                s.nightId === nightId
-        );
-
-        if (!suggestion) {
-            return {
-                success: false,
-                message: "Suggestion not found."
-            };
-        }
-
-        // Only the original contributor can remove it
-        if (suggestion.addedByEmail !== currentUser.email) {
-            return {
-                success: false,
-                message: "You can only remove your own suggestions."
-            };
-        }
-
-        const updatedSuggestions = suggestions.filter(
-            (s) => s.id !== suggestionId
-        );
-
-        setSuggestions(updatedSuggestions);
-
-        // Invalidate ballots referencing the removed movie
-        setVotes(
-            votes.filter(
-                (vote) =>
-                    !(
-                        vote.nightId === nightId &&
-                        (
-                            vote.rankedIds.includes(suggestionId) ||
-                            vote.vetoId === suggestionId
-                        )
-                    )
-            )
-        );
-
-        return {
-            success: true,
-            message: "Movie suggestion removed."
-        };
-    }
 
     function handleSaveVote(nightId, rankedIds, vetoId) {
 
@@ -310,94 +164,6 @@ function App() {
         return {
             success: true,
             message: "Your vote was saved successfully!"
-        };
-    }
-
-    function handleFinalizeNight(nightId) {
-
-        const night = nights.find((n) => n.id === nightId);
-
-        // Verify the night exists and is active
-        if (!night || night.status !== "active") {
-            return {
-                success: false,
-                message: "This movie night cannot be finalized."
-            };
-        }
-
-        // Only the host can close voting
-        if (
-            !currentUser ||
-            night.ownerEmail !== currentUser.email
-        ) {
-            return {
-                success: false,
-                message: "Only the host can close voting."
-            };
-        }
-
-        const nightSuggestions = suggestions.filter(
-            (s) => s.nightId === nightId
-        );
-
-        if (nightSuggestions.length < 3) {
-            return {
-                success: false,
-                message: "At least three movies are required."
-            };
-        }
-
-        // Count votes from current group members
-        const nightVotes = votes.filter(
-            (v) =>
-                v.nightId === nightId &&
-                night.memberEmails.includes(v.userEmail)
-        );
-
-        if (nightVotes.length !== night.memberEmails.length) {
-            return {
-                success: false,
-                message: "All group members must vote before closing."
-            };
-        }
-
-        // Calculate the final result
-        const result = calculateNightResults(
-            night,
-            suggestions,
-            votes
-        );
-
-        // Every movie might have been excluded
-        if (!result.winner) {
-            return {
-                success: false,
-                message:
-                    "No eligible movie remains. Members must " +
-                    "update their vetoes or suggestions."
-            };
-        }
-
-        // Mark the night completed and save the result
-        const updatedNights = nights.map((n) => {
-
-            if (n.id === nightId) {
-                return {
-                    ...n,
-                    status: "completed",
-                    finalizedAt: new Date().toISOString(),
-                    result: result
-                };
-            }
-
-            return n;
-        });
-
-        setNights(updatedNights);
-
-        return {
-            success: true,
-            message: "Voting closed successfully!"
         };
     }
 
@@ -622,7 +388,7 @@ function App() {
                             path="/nights/:id"
                             element={
                                 currentUser ? (
-                                    <NightOverviewPage />
+                                    <NightRoomPage />
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )

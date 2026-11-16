@@ -28,3 +28,22 @@ export function getNight(id, { signal } = {}) {
         { signal }
     );
 }
+
+export function addNightSuggestion(nightId, tmdbId) {
+    return apiRequest(
+        `/nights/${encodeURIComponent(nightId)}/suggestions`,
+        {
+            method: "POST",
+            body: { tmdbId }
+        }
+    );
+}
+
+export function removeNightSuggestion(nightId, suggestionId) {
+    return apiRequest(
+        `/nights/${encodeURIComponent(nightId)}/suggestions/${encodeURIComponent(suggestionId)}`,
+        {
+            method: "DELETE"
+        }
+    );
+}
