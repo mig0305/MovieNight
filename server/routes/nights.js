@@ -93,7 +93,26 @@ nightsRouter.patch('/:id', validate(NightUpdateInput), async (req, res) => {
   if (!isOwner(night, req)) {
     return res.status(403).json({ error: 'Only the owner can edit this night' });
   }
+
+  // A closed night is final: its result must never change afterwards.
+  if (night.status === 'closed') {
+    return res.status(400).json({
+      error: 'This night is closed and can no longer be changed',
+    });
+  }
+
   const { title, maxRuntimeMin, status } = req.body;
+
+  // Closing needs at least one saved ballot, or there is nothing to count.
+  if (status === 'closed') {
+    const ballotsCast = await Vote.countDocuments({ night: night._id });
+    if (ballotsCast === 0) {
+      return res.status(400).json({
+        error: 'At least one member must vote before voting can be closed',
+      });
+    }
+  }
+
   if (title !== undefined) night.title = title; // zod already trimmed it
   if (maxRuntimeMin !== undefined) night.maxRuntimeMin = maxRuntimeMin;
   if (status !== undefined) night.status = status;

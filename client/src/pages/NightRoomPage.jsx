@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { SearchBar } from "../components/SearchBar";
 import { MovieCard } from "../components/MovieCard";
@@ -11,7 +11,8 @@ import { useAuth } from "../auth/useAuth";
 import {
     getNight,
     addNightSuggestion,
-    removeNightSuggestion
+    removeNightSuggestion,
+    closeNightVoting
 } from "../api/nights";
 
 import {
@@ -21,6 +22,7 @@ import {
 
 export default function NightRoomPage() {
     const { id } = useParams();
+    const navigate = useNavigate();
     const { currentUser } = useAuth();
 
     const [night, setNight] = useState(null);
@@ -38,6 +40,8 @@ export default function NightRoomPage() {
     const [removingId, setRemovingId] = useState(null);
     const [message, setMessage] = useState("");
     const [messageIsError, setMessageIsError] = useState(false);
+    const [closing, setClosing] = useState(false);
+    const [closeError, setCloseError] = useState("");
 
     const searchRequestId = useRef(0);
 
@@ -224,6 +228,29 @@ export default function NightRoomPage() {
             setMessageIsError(true);
         } finally {
             setRemovingId(null);
+        }
+    }
+
+        // Host only: close voting, then open the official results.
+    async function handleCloseVoting() {
+        if (!night || closing) return;
+
+        const confirmed = window.confirm(
+            "Close voting now? Nobody will be able to " +
+            "suggest movies or change ballots afterwards."
+        );
+
+        if (!confirmed) return;
+
+        setClosing(true);
+        setCloseError("");
+
+        try {
+            await closeNightVoting(id);
+            navigate(`/nights/${id}/results`);
+        } catch (error) {
+            setCloseError(error.message);
+            setClosing(false);
         }
     }
 
@@ -436,9 +463,52 @@ export default function NightRoomPage() {
                         </p>
                     )
                 ) : (
-                    <p className="room-hint">
-                        Voting is closed. Final results will
-                        be connected in Milestone 6.
+                    <div className="voting-action">
+                        <p>Voting is closed. The final result is ready.</p>
+
+                        <Link
+                            to={`/nights/${id}/results`}
+                            className="night-button"
+                        >
+                            View Final Results
+                        </Link>
+                    </div>
+                )}
+
+                {/* HOST ONLY: CLOSE VOTING */}
+
+                {isOpen && isOwner && (
+                    <div className="voting-action">
+                        <p>
+                            {ballotCount === 0
+                                ? "As the host, you can close voting once at least one member has voted."
+                                : `As the host, you can close voting now. ${ballotCount} of ${memberCount} members have voted.`}
+                        </p>
+
+                        <button
+                            type="button"
+                            className="night-button secondary"
+                            disabled={
+                                closing ||
+                                ballotCount === 0 ||
+                                addingId !== null ||
+                                removingId !== null
+                            }
+                            onClick={handleCloseVoting}
+                        >
+                            {closing
+                                ? "Closing..."
+                                : "Close Voting & Show Results"}
+                        </button>
+                    </div>
+                )}
+
+                {closeError && (
+                    <p
+                        className="room-message error"
+                        role="alert"
+                    >
+                        {closeError}
                     </p>
                 )}
             </div>
@@ -672,9 +742,9 @@ export default function NightRoomPage() {
                     <h2>Movie Night Closed</h2>
 
                     <p className="room-hint">
-                        Suggestions cannot be changed.
-                        Final results will be connected
-                        in Milestone 6.
+                        Suggestions and ballots can no longer
+                        be changed. Use View Final Results
+                        above to see the winner.
                     </p>
                 </div>
             )}

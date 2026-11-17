@@ -278,9 +278,15 @@ export default function VotePage() {
 
                 <p>
                     This movie night is closed.
-                    Final results will be connected in
-                    Milestone 6.
+                    Ballots can no longer be changed.
                 </p>
+
+                <Link
+                    to={`/nights/${id}/results`}
+                    className="night-button"
+                >
+                    View Final Results
+                </Link>
 
                 <Link
                     to={`/nights/${id}`}

@@ -1,60 +1,136 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+
+import LoadingIndicator from "../components/LoadingIndicator";
 import { IMAGE_BASE_URL } from "../api/tmdb";
+import { getNight, getNightResult } from "../api/nights";
 
-export default function ResultsPage({ nights, currentUser }) {
+const pts = (n) => `${n} ${n === 1 ? "point" : "points"}`;
 
+export default function ResultsPage() {
     const { id } = useParams();
 
-    const night = nights.find((n) => n.id === id);
+    const [night, setNight] = useState(null);
+    const [result, setResult] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [reloadKey, setReloadKey] = useState(0);
 
-    if (!night) {
+    // Load the night and its official result together.
+    useEffect(() => {
+        const controller = new AbortController();
+
+        async function loadResults() {
+            setLoading(true);
+            setError("");
+
+            try {
+                const [nightData, resultData] = await Promise.all([
+                    getNight(id, { signal: controller.signal }),
+                    getNightResult(id, { signal: controller.signal })
+                ]);
+
+                if (
+                    !nightData?._id ||
+                    !Array.isArray(nightData.members) ||
+                    !Array.isArray(resultData?.standings)
+                ) {
+                    throw new Error(
+                        "The API returned an invalid result."
+                    );
+                }
+
+                if (!controller.signal.aborted) {
+                    setNight(nightData);
+                    setResult(resultData);
+                }
+            } catch (err) {
+                if (!controller.signal.aborted) {
+                    setError(err.message);
+                }
+            } finally {
+                if (!controller.signal.aborted) {
+                    setLoading(false);
+                }
+            }
+        }
+
+        loadResults();
+
+        return () => controller.abort();
+    }, [id, reloadKey]);
+
+    if (loading) {
+        return <LoadingIndicator text="Loading results..." />;
+    }
+
+    if (error || !night || !result) {
         return (
             <section className="results-page">
-                <h1>Movie night not found</h1>
-                <Link to="/nights">Back to My Nights</Link>
+                <Link to="/nights" className="back-link">
+                    ← Back to My Nights
+                </Link>
+
+                <h1>Unable to load results</h1>
+
+                <p className="room-message error" role="alert">
+                    {error || "Movie night not found."}
+                </p>
+
+                <button
+                    type="button"
+                    className="night-button secondary"
+                    onClick={() => setReloadKey((value) => value + 1)}
+                >
+                    Retry
+                </button>
             </section>
         );
     }
 
-    if (!night.memberEmails.includes(currentUser.email)) {
-        return (
-            <section className="results-page">
-                <h1>Access denied</h1>
-                <p>You are not a member of this movie night.</p>
-                <Link to="/nights">Back to My Nights</Link>
-            </section>
-        );
-    }
-
-    if (night.status !== "completed" || !night.result) {
+    // The backend computes a live result while the night is open.
+    // We only reveal it once the host has closed voting.
+    if (!result.final) {
         return (
             <section className="results-page">
                 <h1>Results Not Available Yet</h1>
+
                 <p>The host has not closed voting.</p>
 
-                <Link
-                    to={`/nights/${id}`}
-                    className="back-link"
+                <button
+                    type="button"
+                    className="night-button secondary"
+                    onClick={() => setReloadKey((value) => value + 1)}
                 >
-                    Back to Night Room
+                    Check Again
+                </button>
+
+                <Link to={`/nights/${id}`} className="back-link">
+                    ← Back to Night Room
                 </Link>
             </section>
         );
     }
 
-    const {
-        winner,
-        runnersUp,
-        excluded,
-        ballotCount,
-        memberCount
-    } = night.result;
+    const { winner, standings, ballots } = result;
+    const memberCount = night.members.length;
+
+    const runnersUp = standings.filter(
+        (movie) => movie.status === "runner_up"
+    );
+
+    const excluded = standings.filter(
+        (movie) =>
+            movie.status === "vetoed" ||
+            movie.status === "over_cap"
+    );
+
+    const returnTo = `/nights/${id}/results`;
 
     return (
         <section className="results-page">
-
-            <Link to="/nights" className="back-link">
-                ← Back to My Nights
+            <Link to={`/nights/${id}`} className="back-link">
+                ← Back to Night Room
             </Link>
 
             <div className="results-header">
@@ -65,72 +141,77 @@ export default function ResultsPage({ nights, currentUser }) {
                 <h1>{night.title}</h1>
 
                 <p>
-                    {ballotCount} of {memberCount} members voted
+                    {ballots} of {memberCount} members voted
                 </p>
 
                 <p className="results-date">
-                    Finalized on{" "}
-                    {new Date(night.finalizedAt).toLocaleString()}
+                    Voting closed on{" "}
+                    {new Date(night.updatedAt).toLocaleString()}
                 </p>
             </div>
 
             {/* WINNING MOVIE */}
 
-            <div className="winner-card">
+            {winner ? (
+                <div className="winner-card">
+                    <div className="winner-image">
+                        {winner.posterPath ? (
+                            <img
+                                src={IMAGE_BASE_URL + winner.posterPath}
+                                alt={`${winner.title} poster`}
+                            />
+                        ) : (
+                            <div className="poster-placeholder">
+                                No Poster Available
+                            </div>
+                        )}
+                    </div>
 
-                <div className="winner-image">
-                    {winner.posterPath ? (
-                        <img
-                            src={IMAGE_BASE_URL + winner.posterPath}
-                            alt={`${winner.title} poster`}
-                        />
-                    ) : (
-                        <div className="poster-placeholder">
-                            No Poster Available
-                        </div>
-                    )}
+                    <div className="winner-info">
+                        <span className="winner-badge">
+                            WINNING MOVIE
+                        </span>
+
+                        <h2>{winner.title}</h2>
+
+                        <p className="winner-score">
+                            {pts(winner.points)}
+                        </p>
+
+                        <p>Runtime: {winner.runtime} min</p>
+
+                        <p>
+                            TMDB Rating:{" "}
+                            {winner.voteAverage.toFixed(1)}/10
+                        </p>
+
+                        <p className="winner-reason">
+                            {winner.reason}
+                        </p>
+
+                        <Link
+                            to={`/movie/${winner.tmdbId}`}
+                            state={{ returnTo }}
+                            className="night-button"
+                        >
+                            View Movie Details
+                        </Link>
+                    </div>
                 </div>
+            ) : (
+                <div className="results-section">
+                    <h2>No Winner</h2>
 
-                <div className="winner-info">
-
-                    <span className="winner-badge">
-                        WINNING MOVIE
-                    </span>
-
-                    <h2>{winner.title}</h2>
-
-                    <p className="winner-score">
-                        {winner.points} points
+                    <p className="room-empty">
+                        Every suggested movie was vetoed or
+                        excluded, so no movie could win.
                     </p>
-
-                    <p>
-                        Runtime: {winner.runtime} min
-                    </p>
-
-                    <p>
-                        TMDB Rating:{" "}
-                        {winner.voteAverage.toFixed(1)}/10
-                    </p>
-
-                    <p className="winner-reason">
-                        {winner.reason}
-                    </p>
-
-                    <Link
-                        to={`/movie/${winner.tmdbId}`}
-                        state={{ returnTo: `/nights/${id}/results` }}
-                        className="night-button"
-                    >
-                        View Movie Details
-                    </Link>
-
                 </div>
-            </div>
+            )}
 
             {/* RUNNERS-UP */}
 
             <div className="results-section">
-
                 <h2>Runners-Up</h2>
 
                 {runnersUp.length === 0 ? (
@@ -139,22 +220,15 @@ export default function ResultsPage({ nights, currentUser }) {
                     </p>
                 ) : (
                     <div className="results-list">
-
                         {runnersUp.map((movie, index) => (
-                            <div
-                                className="result-item"
-                                key={movie.id}
-                            >
+                            <div className="result-item" key={movie.id}>
                                 <span className="result-position">
                                     #{index + 2}
                                 </span>
 
                                 {movie.posterPath ? (
                                     <img
-                                        src={
-                                            IMAGE_BASE_URL +
-                                            movie.posterPath
-                                        }
+                                        src={IMAGE_BASE_URL + movie.posterPath}
                                         alt={`${movie.title} poster`}
                                     />
                                 ) : (
@@ -165,13 +239,16 @@ export default function ResultsPage({ nights, currentUser }) {
 
                                 <div className="result-info">
                                     <h3>
-                                        <Link to={`/movie/${movie.tmdbId}`} state={{ returnTo: `/nights/${id}/results` }}> 
+                                        <Link
+                                            to={`/movie/${movie.tmdbId}`}
+                                            state={{ returnTo }}
+                                        >
                                             {movie.title}
                                         </Link>
                                     </h3>
 
                                     <p>
-                                        {movie.points} points
+                                        {pts(movie.points)}
                                         {" · "}
                                         TMDB {movie.voteAverage.toFixed(1)}/10
                                     </p>
@@ -182,7 +259,6 @@ export default function ResultsPage({ nights, currentUser }) {
                                 </div>
                             </div>
                         ))}
-
                     </div>
                 )}
             </div>
@@ -190,7 +266,6 @@ export default function ResultsPage({ nights, currentUser }) {
             {/* EXCLUDED MOVIES */}
 
             <div className="results-section">
-
                 <h2>Excluded Movies</h2>
 
                 {excluded.length === 0 ? (
@@ -199,7 +274,6 @@ export default function ResultsPage({ nights, currentUser }) {
                     </p>
                 ) : (
                     <div className="results-list">
-
                         {excluded.map((movie) => (
                             <div
                                 className="result-item excluded"
@@ -207,10 +281,7 @@ export default function ResultsPage({ nights, currentUser }) {
                             >
                                 {movie.posterPath ? (
                                     <img
-                                        src={
-                                            IMAGE_BASE_URL +
-                                            movie.posterPath
-                                        }
+                                        src={IMAGE_BASE_URL + movie.posterPath}
                                         alt={`${movie.title} poster`}
                                     />
                                 ) : (
@@ -221,7 +292,10 @@ export default function ResultsPage({ nights, currentUser }) {
 
                                 <div className="result-info">
                                     <h3>
-                                        <Link to={`/movie/${movie.tmdbId}`} state={{ returnTo: `/nights/${id}/results` }}>
+                                        <Link
+                                            to={`/movie/${movie.tmdbId}`}
+                                            state={{ returnTo }}
+                                        >
                                             {movie.title}
                                         </Link>
                                     </h3>
@@ -232,7 +306,6 @@ export default function ResultsPage({ nights, currentUser }) {
                                 </div>
                             </div>
                         ))}
-
                     </div>
                 )}
             </div>
@@ -242,7 +315,6 @@ export default function ResultsPage({ nights, currentUser }) {
                     Back to My Nights
                 </Link>
             </div>
-
         </section>
     );
 }

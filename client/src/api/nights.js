@@ -57,3 +57,23 @@ export function saveNightBallot(nightId, ballot) {
         }
     );
 }
+
+
+// Host only: close voting. The backend makes the result final.
+export function closeNightVoting(nightId) {
+    return apiRequest(
+        `/nights/${encodeURIComponent(nightId)}`,
+        {
+            method: "PATCH",
+            body: { status: "closed" }
+        }
+    );
+}
+
+// Official result computed by Express (utils/scoring.js).
+export function getNightResult(nightId, { signal } = {}) {
+    return apiRequest(
+        `/nights/${encodeURIComponent(nightId)}/result`,
+        { signal }
+    );
+}

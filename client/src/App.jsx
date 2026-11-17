@@ -291,10 +291,7 @@ function App() {
                             path="/nights/:id/results"
                             element={
                                 currentUser ? (
-                                    <ResultsPage
-                                        nights={nights}
-                                        currentUser={currentUser}
-                                    />
+                                    <ResultsPage />
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )

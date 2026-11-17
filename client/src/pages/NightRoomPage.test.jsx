@@ -6,8 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import NightRoomPage from "./NightRoomPage";
 
-import { getNight, addNightSuggestion, removeNightSuggestion } from "../api/nights";
-
+import { getNight, addNightSuggestion, removeNightSuggestion, closeNightVoting } from "../api/nights";
 import { getNightMovie, searchNightMovies } from "../api/movies";
 
 vi.mock("../auth/useAuth", () => ({
@@ -22,7 +21,8 @@ vi.mock("../auth/useAuth", () => ({
 vi.mock("../api/nights", () => ({
     getNight: vi.fn(),
     addNightSuggestion: vi.fn(),
-    removeNightSuggestion: vi.fn()
+    removeNightSuggestion: vi.fn(),
+    closeNightVoting: vi.fn()
 }));
 
 vi.mock("../api/movies", () => ({
@@ -64,6 +64,11 @@ function renderRoom() {
                 <Route
                     path="/nights/:id"
                     element={<NightRoomPage />}
+                />
+
+                <Route
+                    path="/nights/:id/results"
+                    element={<h1>Results Page</h1>}
                 />
             </Routes>
         </MemoryRouter>
@@ -205,4 +210,80 @@ test("allows removing a stored suggestion", async () => {
             "sug1"
         );
     });
+});
+
+
+test("host can close voting and is taken to the results", async () => {
+    getNight.mockResolvedValue({
+        ...room,
+        ballotsCast: 2
+    });
+
+    closeNightVoting.mockResolvedValue({
+        ...room,
+        status: "closed"
+    });
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderRoom();
+
+    fireEvent.click(
+        await screen.findByRole("button", {
+            name: "Close Voting & Show Results"
+        })
+    );
+
+    await waitFor(() => {
+        expect(closeNightVoting).toHaveBeenCalledWith("night123");
+    });
+
+    expect(
+        await screen.findByRole("heading", { name: "Results Page" })
+    ).toBeInTheDocument();
+});
+
+test("host cannot close voting before anyone has voted", async () => {
+    renderRoom();
+
+    expect(
+        await screen.findByRole("button", {
+            name: "Close Voting & Show Results"
+        })
+    ).toBeDisabled();
+});
+
+test("members do not see the close voting button", async () => {
+    getNight.mockResolvedValue({
+        ...room,
+        isOwner: false,
+        ballotsCast: 2
+    });
+
+    renderRoom();
+
+    await screen.findByRole("heading", {
+        name: "Friday Movie Night"
+    });
+
+    expect(
+        screen.queryByRole("button", {
+            name: "Close Voting & Show Results"
+        })
+    ).not.toBeInTheDocument();
+});
+
+test("a closed night links to the final results", async () => {
+    getNight.mockResolvedValue({
+        ...room,
+        status: "closed"
+    });
+
+    renderRoom();
+
+    expect(
+        await screen.findByRole("link", {
+            name: "View Final Results"
+        })
+    ).toHaveAttribute("href", "/nights/night123/results");
 });
