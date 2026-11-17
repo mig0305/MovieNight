@@ -63,109 +63,7 @@ function App() {
     } = useAuth();
     // Temporary frontend-only storage for movie nights
     const [nights] = useState([]);
-    const [suggestions] = useState([]);
-    const [votes, setVotes] = useState([]);
     const [watchlist, setWatchlist] = useState([]);
-
-    function handleSaveVote(nightId, rankedIds, vetoId) {
-
-        const night = nights.find((n) => n.id === nightId);
-
-        // Check that the night exists and is active
-        if (!night || night.status !== "active") {
-            return {
-                success: false,
-                message: "Voting is not available for this night."
-            };
-        }
-
-        // Check membership
-        if (
-            !currentUser ||
-            !night.memberEmails.includes(currentUser.email)
-        ) {
-            return {
-                success: false,
-                message: "You are not a member of this night."
-            };
-        }
-
-        // Find the movies suggested for this night
-        const nightSuggestions = suggestions.filter(
-            (s) => s.nightId === nightId
-        );
-
-        if (nightSuggestions.length < 3) {
-            return {
-                success: false,
-                message: "At least three movies are required."
-            };
-        }
-
-        // Check that all three ranks contain valid suggestions
-        const validIds = nightSuggestions.map((s) => s.id);
-
-        if (
-            !Array.isArray(rankedIds) ||
-            rankedIds.length !== 3 ||
-            !rankedIds.every((id) => validIds.includes(id))
-        ) {
-            return {
-                success: false,
-                message: "Please select three valid movies."
-            };
-        }
-
-        // Prevent ranking the same movie twice
-        if (new Set(rankedIds).size !== 3) {
-            return {
-                success: false,
-                message: "Each ranked movie must be different."
-            };
-        }
-
-        // Verify the optional veto
-        if (vetoId) {
-
-            if (!validIds.includes(vetoId)) {
-                return {
-                    success: false,
-                    message: "Invalid veto selection."
-                };
-            }
-
-            if (rankedIds.includes(vetoId)) {
-                return {
-                    success: false,
-                    message: "You cannot veto one of your top three."
-                };
-            }
-        }
-
-        // Construct this user's ballot
-        const newVote = {
-            nightId: nightId,
-            userEmail: currentUser.email,
-            rankedIds: rankedIds,
-            vetoId: vetoId || null
-        };
-
-        // Replace an existing ballot, or add a new one
-        const otherVotes = votes.filter(
-            (v) =>
-                !(
-                    v.nightId === nightId &&
-                    v.userEmail === currentUser.email
-                )
-        );
-
-        setVotes([...otherVotes, newVote]);
-
-        return {
-            success: true,
-            message: "Your vote was saved successfully!"
-        };
-    }
 
     function handleAddToWatchlist(movie) {
 
@@ -366,18 +264,12 @@ function App() {
                                 )
                             }
                         />
-
+                  
                         <Route
                             path="/nights/:id/vote"
                             element={
                                 currentUser ? (
-                                    <VotePage
-                                        nights={nights}
-                                        suggestions={suggestions}
-                                        votes={votes}
-                                        currentUser={currentUser}
-                                        onSaveVote={handleSaveVote}
-                                    />
+                                    <VotePage />
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )

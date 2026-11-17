@@ -1,114 +1,335 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-export default function VotePage( {nights,suggestions,votes,currentUser,onSaveVote} ) {
+import LoadingIndicator from "../components/LoadingIndicator";
+import { getNight, saveNightBallot } from "../api/nights";
+
+const EMPTY_CHOICES = {
+    first: "",
+    second: "",
+    third: "",
+    veto: ""
+};
+
+export default function VotePage() {
     const { id } = useParams();
 
-    const night = nights.find((n) => n.id === id);
+    const [night, setNight] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState("");
+    const [reloadKey, setReloadKey] = useState(0);
 
-    const nightSuggestions = suggestions.filter(
-        (s) => s.nightId === id
-    );
+    const [choices, setChoices] = useState(EMPTY_CHOICES);
+    const [hasSavedBallot, setHasSavedBallot] = useState(false);
+    const [needsRevote, setNeedsRevote] = useState(false);
 
-    // Find the current user's previously saved ballot
-    const savedVote = votes.find(
-        (v) =>
-            v.nightId === id &&
-            v.userEmail === currentUser.email
-    );
-
-    // Three ranking choices
-    const [first, setFirst] = useState(
-        savedVote?.rankedIds[0] || ""
-    );
-
-    const [second, setSecond] = useState(
-        savedVote?.rankedIds[1] || ""
-    );
-
-    const [third, setThird] = useState(
-        savedVote?.rankedIds[2] || ""
-    );
-
-    // One optional veto
-    const [veto, setVeto] = useState(
-        savedVote?.vetoId || ""
-    );
-
+    const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState("");
     const [isError, setIsError] = useState(false);
 
-    function handleSubmit(e) {
-        e.preventDefault();
+    // Load suggestions and this user's existing ballot.
+    useEffect(() => {
+        const controller = new AbortController();
 
-        const rankedIds = [first, second, third];
+        async function loadVoting() {
+            setLoading(true);
+            setLoadError("");
+            setMessage("");
+            setNight(null);
 
-        const result = onSaveVote(id, rankedIds, veto);
+            try {
+                const data = await getNight(id, {
+                    signal: controller.signal
+                });
 
-        setMessage(result.message);
-        setIsError(!result.success);
+                if (
+                    !data?._id ||
+                    !Array.isArray(data.suggestions)
+                ) {
+                    throw new Error(
+                        "The API returned invalid voting data."
+                    );
+                }
+
+                if (controller.signal.aborted) return;
+
+                const validIds = new Set(
+                    data.suggestions.map(
+                        (movie) => String(movie._id)
+                    )
+                );
+
+                const ballot = data.myBallot ?? {
+                    ranking: [],
+                    veto: null
+                };
+
+                // MongoDB ObjectIds arrive as strings in JSON.
+                const ranking = (
+                    Array.isArray(ballot.ranking)
+                        ? ballot.ranking
+                        : []
+                )
+                    .map((value) =>
+                        String(value?._id ?? value)
+                    )
+                    .filter((value) => validIds.has(value))
+                    .slice(0, 3);
+
+                const vetoId = ballot.veto
+                    ? String(
+                        ballot.veto?._id ?? ballot.veto
+                    )
+                    : "";
+
+                setChoices({
+                    first: ranking[0] ?? "",
+                    second: ranking[1] ?? "",
+                    third: ranking[2] ?? "",
+                    veto:
+                        validIds.has(vetoId) &&
+                        !ranking.includes(vetoId)
+                            ? vetoId
+                            : ""
+                });
+
+                const saved = Boolean(ballot._id);
+
+                setHasSavedBallot(
+                    saved && ranking.length === 3
+                );
+
+                setNeedsRevote(
+                    saved && ranking.length !== 3
+                );
+
+                setNight(data);
+            } catch (error) {
+                if (!controller.signal.aborted) {
+                    setLoadError(error.message);
+                }
+            } finally {
+                if (!controller.signal.aborted) {
+                    setLoading(false);
+                }
+            }
+        }
+
+        loadVoting();
+
+        return () => controller.abort();
+    }, [id, reloadKey]);
+
+    function changeRank(field, value) {
+        const clearedOwnVeto =
+            value !== "" && choices.veto === value;
+
+        setChoices((previous) => ({
+            ...previous,
+            [field]: value,
+            veto:
+                previous.veto === value
+                    ? ""
+                    : previous.veto
+        }));
+
+        if (clearedOwnVeto) {
+            setMessage(
+                "Your veto was cleared because you ranked that movie."
+            );
+        } else {
+            setMessage("");
+        }
+
+        setIsError(false);
     }
 
-    if (!night) {
+    async function handleSubmit(event) {
+        event.preventDefault();
+
+        if (saving || !night) return;
+
+        setMessage("");
+        setIsError(false);
+
+        const ranking = [
+            choices.first,
+            choices.second,
+            choices.third
+        ];
+
+        const validIds = new Set(
+            night.suggestions.map(
+                (movie) => String(movie._id)
+            )
+        );
+
+        if (night.status !== "open") {
+            setMessage("Voting is closed for this night.");
+            setIsError(true);
+            return;
+        }
+
+        // Validate exactly three different suggestions.
+        if (
+            ranking.some((value) => !validIds.has(value)) ||
+            new Set(ranking).size !== 3
+        ) {
+            setMessage(
+                "Choose three different suggested movies."
+            );
+            setIsError(true);
+            return;
+        }
+
+        // Veto is optional, but cannot overlap rankings.
+        if (
+            choices.veto &&
+            (
+                !validIds.has(choices.veto) ||
+                ranking.includes(choices.veto)
+            )
+        ) {
+            setMessage(
+                "Your veto must be a movie outside your top three."
+            );
+            setIsError(true);
+            return;
+        }
+
+        setSaving(true);
+
+        try {
+            const ballot = await saveNightBallot(id, {
+                ranking,
+                veto: choices.veto || null
+            });
+
+            if (
+                !ballot?._id ||
+                !Array.isArray(ballot.ranking)
+            ) {
+                throw new Error(
+                    "The API returned an invalid saved ballot."
+                );
+            }
+
+            setHasSavedBallot(true);
+            setNeedsRevote(false);
+
+            setMessage(
+                "Your vote was saved successfully. " +
+                "You can update it until voting closes."
+            );
+
+            setIsError(false);
+        } catch (error) {
+            setMessage(error.message);
+            setIsError(true);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (loading) {
+        return (
+            <LoadingIndicator
+                text="Loading voting choices..."
+            />
+        );
+    }
+
+    if (loadError || !night) {
         return (
             <section className="vote-page">
-                <h1>Movie night not found</h1>
-                <Link to="/nights">Back to My Nights</Link>
+                <Link
+                    to="/nights"
+                    className="back-link"
+                >
+                    ← Back to My Nights
+                </Link>
+
+                <h1>Unable to load voting</h1>
+
+                <p
+                    className="vote-message error"
+                    role="alert"
+                >
+                    {loadError || "Movie night not found."}
+                </p>
+
+                <button
+                    type="button"
+                    className="night-button secondary"
+                    onClick={() =>
+                        setReloadKey((value) => value + 1)
+                    }
+                >
+                    Retry
+                </button>
             </section>
         );
     }
 
-    if (!night.memberEmails.includes(currentUser.email)) {
+    if (night.status !== "open") {
         return (
             <section className="vote-page">
-                <h1>Access denied</h1>
-                <p>You are not a member of this night.</p>
-                <Link to="/nights">Back to My Nights</Link>
-            </section>
-        );
-    }
-    
-    if (night.status !== "active") {
-        return (
-            <section className="vote-page">
-
-                <h1>Voting is Closed</h1>
+                <h1>Voting Is Closed</h1>
 
                 <p>
-                    This movie night has been finalized.
-                    You can now see the winning movie.
+                    This movie night is closed.
+                    Final results will be connected in
+                    Milestone 6.
                 </p>
 
                 <Link
-                    to={`/nights/${id}/results`}
-                    className="night-button"
+                    to={`/nights/${id}`}
+                    className="back-link"
                 >
-                    View Final Results
+                    ← Back to Night Room
                 </Link>
-
             </section>
         );
     }
 
-    if (nightSuggestions.length < 3) {
+    if (night.suggestions.length < 3) {
         return (
             <section className="vote-page">
                 <h1>Not enough movies yet</h1>
+
                 <p>
-                    At least three suggested movies are needed
-                    before members can rank their top three.
+                    At least three suggested movies are
+                    needed to rank your top three.
                 </p>
-                <Link to={`/nights/${id}`} className="back-link">
-                    Back to Night Room
+
+                <Link
+                    to={`/nights/${id}`}
+                    className="back-link"
+                >
+                    ← Back to Night Room
                 </Link>
             </section>
         );
     }
 
+    const rankedIds = [
+        choices.first,
+        choices.second,
+        choices.third
+    ];
+
+    // Veto dropdown excludes the movies already ranked.
+    const availableVetoes = night.suggestions.filter(
+        (movie) =>
+            !rankedIds.includes(String(movie._id))
+    );
+
     return (
         <section className="vote-page">
-
-            <Link to={`/nights/${id}`} className="back-link">
+            <Link
+                to={`/nights/${id}`}
+                className="back-link"
+            >
                 ← Back to Night Room
             </Link>
 
@@ -118,7 +339,6 @@ export default function VotePage( {nights,suggestions,votes,currentUser,onSaveVo
             </div>
 
             <div className="vote-card">
-
                 <h2>Rank Your Top Three</h2>
 
                 <p className="vote-description">
@@ -128,101 +348,76 @@ export default function VotePage( {nights,suggestions,votes,currentUser,onSaveVo
                     and third earns 1 point.
                 </p>
 
-                {savedVote && (
+                {hasSavedBallot && (
                     <p className="vote-notice">
-                        You have already submitted a ballot.
-                        Saving again will replace your previous vote.
+                        You already have a saved ballot.
+                        Saving again replaces it.
                     </p>
                 )}
 
-                <form onSubmit={handleSubmit} className="vote-form">
+                {needsRevote && (
+                    <p className="vote-notice">
+                        Your earlier ballot needs updating
+                        because a movie is no longer available.
+                    </p>
+                )}
 
-                    <div className="vote-choice">
-                        <label htmlFor="first-choice">
-                            1st Place — 3 points
-                        </label>
-
-                        <select
-                            id="first-choice"
-                            value={first}
-                            onChange={(e) => {
-                                setFirst(e.target.value);
-                                setMessage("");
-                            }}
-                            required
+                <form
+                    onSubmit={handleSubmit}
+                    className="vote-form"
+                >
+                    {[
+                        [
+                            "first",
+                            "1st Place — 3 points",
+                            "Select your favorite movie"
+                        ],
+                        [
+                            "second",
+                            "2nd Place — 2 points",
+                            "Select your second choice"
+                        ],
+                        [
+                            "third",
+                            "3rd Place — 1 point",
+                            "Select your third choice"
+                        ]
+                    ].map(([field, label, placeholder]) => (
+                        <div
+                            className="vote-choice"
+                            key={field}
                         >
-                            <option value="">
-                                Select your favorite movie
-                            </option>
+                            <label htmlFor={`${field}-choice`}>
+                                {label}
+                            </label>
 
-                            {nightSuggestions.map((movie) => (
-                                <option
-                                    key={movie.id}
-                                    value={movie.id}
-                                >
-                                    {movie.title}
+                            <select
+                                id={`${field}-choice`}
+                                value={choices[field]}
+                                onChange={(event) =>
+                                    changeRank(
+                                        field,
+                                        event.target.value
+                                    )
+                                }
+                                required
+                                disabled={saving}
+                            >
+                                <option value="">
+                                    {placeholder}
                                 </option>
-                            ))}
-                        </select>
-                    </div>
 
-                    <div className="vote-choice">
-                        <label htmlFor="second-choice">
-                            2nd Place — 2 points
-                        </label>
-
-                        <select
-                            id="second-choice"
-                            value={second}
-                            onChange={(e) => {
-                                setSecond(e.target.value);
-                                setMessage("");
-                            }}
-                            required
-                        >
-                            <option value="">
-                                Select your second choice
-                            </option>
-
-                            {nightSuggestions.map((movie) => (
-                                <option
-                                    key={movie.id}
-                                    value={movie.id}
-                                >
-                                    {movie.title}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div className="vote-choice">
-                        <label htmlFor="third-choice">
-                            3rd Place — 1 point
-                        </label>
-
-                        <select
-                            id="third-choice"
-                            value={third}
-                            onChange={(e) => {
-                                setThird(e.target.value);
-                                setMessage("");
-                            }}
-                            required
-                        >
-                            <option value="">
-                                Select your third choice
-                            </option>
-
-                            {nightSuggestions.map((movie) => (
-                                <option
-                                    key={movie.id}
-                                    value={movie.id}
-                                >
-                                    {movie.title}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                                {night.suggestions.map((movie) => (
+                                    <option
+                                        key={movie._id}
+                                        value={movie._id}
+                                    >
+                                        {movie.title}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    ))}
 
                     <div className="vote-choice veto-choice">
                         <label htmlFor="veto-choice">
@@ -230,41 +425,54 @@ export default function VotePage( {nights,suggestions,votes,currentUser,onSaveVo
                         </label>
 
                         <p className="vote-description">
-                            You may reject one movie outside your
-                            top three. A vetoed movie cannot win.
+                            You may veto one movie outside your own top
+                            three. If any member vetoes a movie, that
+                            movie cannot win, even if other members
+                            ranked it.
                         </p>
 
                         <select
                             id="veto-choice"
-                            value={veto}
-                            onChange={(e) => {
-                                setVeto(e.target.value);
+                            value={choices.veto}
+                            onChange={(event) => {
+                                setChoices((previous) => ({
+                                    ...previous,
+                                    veto: event.target.value
+                                }));
                                 setMessage("");
                             }}
+                            disabled={saving}
                         >
                             <option value="">
                                 No veto
                             </option>
 
-                            {nightSuggestions.map((movie) => (
+                            {availableVetoes.map((movie) => (
                                 <option
-                                    key={movie.id}
-                                    value={movie.id}
+                                    key={movie._id}
+                                    value={movie._id}
                                 >
                                     {movie.title}
                                 </option>
                             ))}
                         </select>
+
+                        {night.suggestions.length === 3 && (
+                            <p className="vote-description">
+                                A fourth suggestion is needed
+                                to veto outside your top three.
+                            </p>
+                        )}
                     </div>
 
                     {message && (
                         <p
                             className={
-                                isError
-                                    ? "vote-message error"
-                                    : "vote-message success"
+                                `vote-message ${
+                                    isError ? "error" : "success"
+                                }`
                             }
-                            role="status"
+                            role={isError ? "alert" : "status"}
                         >
                             {message}
                         </p>
@@ -273,14 +481,28 @@ export default function VotePage( {nights,suggestions,votes,currentUser,onSaveVo
                     <button
                         type="submit"
                         className="vote-submit"
+                        disabled={saving}
                     >
-                        {savedVote
-                            ? "Update My Vote"
-                            : "Submit My Vote"}
+                        {saving
+                            ? "Saving Vote..."
+                            : hasSavedBallot
+                                ? "Update My Vote"
+                                : "Submit My Vote"}
                     </button>
-
                 </form>
             </div>
+
+            <button
+                type="button"
+                className="night-button secondary"
+                onClick={() =>
+                    setReloadKey((value) => value + 1)
+                }
+                disabled={saving}
+            >
+                Reload voting choices
+            </button>
         </section>
     );
 }
+

@@ -47,3 +47,13 @@ export function removeNightSuggestion(nightId, suggestionId) {
         }
     );
 }
+
+export function saveNightBallot(nightId, ballot) {
+    return apiRequest(
+        `/nights/${encodeURIComponent(nightId)}/ballot`,
+        {
+            method: "PUT",
+            body: ballot
+        }
+    );
+}

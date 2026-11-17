@@ -42,11 +42,20 @@ export const SuggestionInput = z.object({
 
 export const BallotInput = z
   .object({
-    ranking: z.array(objectId).max(3, 'You can rank at most 3 films').default([]),
+    ranking: z.array(objectId).length(
+      3,
+      "You must rank exactly 3 films"
+    ),
     veto: objectId.nullable().default(null),
   })
-  .refine((b) => new Set(b.ranking).size === b.ranking.length, 'You cannot rank the same film twice')
-  .refine((b) => !b.veto || !b.ranking.includes(b.veto), 'You cannot rank and veto the same film');
+  .refine(
+    (b) => new Set(b.ranking).size === b.ranking.length,
+    "You cannot rank the same film twice"
+  )
+  .refine(
+    (b) => !b.veto || !b.ranking.includes(b.veto),
+    "You cannot rank and veto the same film"
+  );
 
 // Validation is middleware: parse, then next(). Bad input -> 400 with a readable message.
 export const validate = (schema) => (req, res, next) => {

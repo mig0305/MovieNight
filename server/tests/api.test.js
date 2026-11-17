@@ -56,6 +56,59 @@ describe('validation (zod)', () => {
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: 'Not found' });
   });
+  
+  it('ballot with only 2 ranked films -> 400', async () => {
+    const id1 = '66f1c2e4b7a1d3f0c8e2a901';
+    const id2 = '66f1c2e4b7a1d3f0c8e2a902';
+    const nightId = '66f1c2e4b7a1d3f0c8e2a905';
+
+    const res = await request(app)
+      .put(`/api/nights/${nightId}/ballot`)
+      .set(auth)
+      .send({
+        ranking: [id1, id2],
+        veto: null,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/exactly 3/i);
+  });
+
+  it('ballot with repeated ranked film -> 400', async () => {
+    const id1 = '66f1c2e4b7a1d3f0c8e2a901';
+    const id3 = '66f1c2e4b7a1d3f0c8e2a903';
+    const nightId = '66f1c2e4b7a1d3f0c8e2a905';
+
+    const res = await request(app)
+      .put(`/api/nights/${nightId}/ballot`)
+      .set(auth)
+      .send({
+        ranking: [id1, id1, id3],
+        veto: null,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/same film twice/i);
+  });
+
+  it('ballot cannot veto a ranked film -> 400', async () => {
+    const id1 = '66f1c2e4b7a1d3f0c8e2a901';
+    const id2 = '66f1c2e4b7a1d3f0c8e2a902';
+    const id3 = '66f1c2e4b7a1d3f0c8e2a903';
+    const nightId = '66f1c2e4b7a1d3f0c8e2a905';
+
+    const res = await request(app)
+      .put(`/api/nights/${nightId}/ballot`)
+      .set(auth)
+      .send({
+        ranking: [id1, id2, id3],
+        veto: id1,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/rank and veto/i);
+  });
+
 });
 
 // ---------- S21 security fixes, locked in ----------

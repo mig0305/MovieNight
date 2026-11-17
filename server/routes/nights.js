@@ -182,10 +182,29 @@ nightsRouter.delete('/:id/suggestions/:suggestionId', async (req, res) => {
   }
 
   await suggestion.deleteOne();
-  // Take it off every ballot in this night
-  await Vote.updateMany({ night: night._id }, { $pull: { ranking: suggestion._id } });
-  await Vote.updateMany({ night: night._id, veto: suggestion._id }, { veto: null });
+
+  // If the deleted movie was ranked, the affected ballot
+  // is no longer a complete top-three ballot.
+  // Remove it so the member must vote again.
+  await Vote.deleteMany({
+    night: night._id,
+    ranking: suggestion._id,
+  });
+
+  // If the deleted movie was only vetoed, keep the
+  // otherwise valid ballot but remove that veto.
+  await Vote.updateMany(
+    {
+      night: night._id,
+      veto: suggestion._id,
+    },
+    {
+      $set: { veto: null },
+    }
+  );
+
   res.sendStatus(204);
+
 });
 
 // ---------- voting ----------

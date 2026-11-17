@@ -279,6 +279,10 @@ export default function NightRoomPage() {
         memberCount
     );
 
+    const hasVoted =
+    Array.isArray(night.myBallot?.ranking) &&
+    night.myBallot.ranking.length === 3;
+
     const votingPercentage = memberCount > 0
         ? Math.round((ballotCount / memberCount) * 100)
         : 0;
@@ -380,16 +384,15 @@ export default function NightRoomPage() {
                     ))}
                 </div>
             </div>
-
-            {/* READ-ONLY VOTING PROGRESS */}
+      
+            {/* GROUP VOTING */}
 
             <div className="room-section voting-section">
                 <h2>Group Voting</h2>
 
                 <p className="room-hint">
                     {ballotCount} of {memberCount} members
-                    have voted. Voting controls will be
-                    connected in Milestone 5.
+                    have submitted ballots.
                 </p>
 
                 <div
@@ -407,6 +410,37 @@ export default function NightRoomPage() {
                         }}
                     />
                 </div>
+
+                {isOpen ? (
+                    suggestions.length >= 3 ? (
+                        <div className="voting-action">
+                            <p>
+                                {hasVoted
+                                    ? "Your ballot is saved. You can update it while voting is open."
+                                    : "Rank your top three movies and optionally use your veto."}
+                            </p>
+
+                            <Link
+                                to={`/nights/${id}/vote`}
+                                className="night-button"
+                            >
+                                {hasVoted
+                                    ? "Update My Vote"
+                                    : "Cast My Vote"}
+                            </Link>
+                        </div>
+                    ) : (
+                        <p className="room-empty">
+                            At least three suggested movies are
+                            needed before voting can begin.
+                        </p>
+                    )
+                ) : (
+                    <p className="room-hint">
+                        Voting is closed. Final results will
+                        be connected in Milestone 6.
+                    </p>
+                )}
             </div>
 
             {/* SAVED SUGGESTIONS */}
