@@ -4,7 +4,6 @@ import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 
 import { Navbar } from "./components/NavBar";
 import DiscoverPage from "./pages/DiscoverPage";
-import ConnectionTestPage from "./pages/ConnectionTestPage";
 import { useAuth } from "./auth/useAuth";
 import {
     getWatchlist,
@@ -221,11 +220,6 @@ function App() {
                 >
                 <Suspense fallback={<LoadingIndicator text="Opening page..." />}>
                     <Routes>
-                        <Route
-                            path="/connection-test"
-                            element={<ConnectionTestPage />}
-                        />
-
                         <Route
                             path="/"
                             element={<DiscoverPage />}

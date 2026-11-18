@@ -128,3 +128,27 @@ Authorization: Bearer {{token}}
 ### Delete the night and everything in it (owner only) -> 204
 DELETE {{api}}/nights/{{nightId}}
 Authorization: Bearer {{token}}
+
+### ---------- Watchlist (personal) ----------
+
+### My watchlist, newest first -> 200
+GET {{api}}/watchlist
+Authorization: Bearer {{token}}
+
+### Save a movie (details come from TMDB) -> 201 (409 if already saved)
+POST {{api}}/watchlist
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "tmdbId": 603 }
+
+### Mark it as watched (or false for not watched) -> 200
+PATCH {{api}}/watchlist/603
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "watched": true }
+
+### Remove it from my watchlist -> 204
+DELETE {{api}}/watchlist/603
+Authorization: Bearer {{token}}

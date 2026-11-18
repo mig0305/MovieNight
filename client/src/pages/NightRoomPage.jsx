@@ -114,12 +114,22 @@ export default function NightRoomPage() {
     }, [id, refreshKey]);
 
     // Reset old search results when navigating to another room.
-    useEffect(() => {
-        searchRequestId.current += 1;
+    // Done during render (React's recommended pattern), not in an effect.
+    const [searchRoomId, setSearchRoomId] = useState(id);
+
+    if (searchRoomId !== id) {
+        setSearchRoomId(id);
         setMovies([]);
         setHasSearched(false);
         setSearchError("");
         setMessage("");
+    }
+
+    // When leaving a room, ignore any search that is still running.
+    useEffect(() => {
+        return () => {
+            searchRequestId.current += 1;
+        };
     }, [id]);
 
     // Search TMDB through our Express backend.
