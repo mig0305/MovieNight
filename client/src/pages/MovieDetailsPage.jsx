@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, Link, useLocation } from "react-router-dom";
 import WhereToWatch from "../components/WhereToWatch";
 import LoadingIndicator from "../components/LoadingIndicator";
-import {getMovieDetails, IMAGE_BASE_URL, BACKDROP_BASE_URL} from "../api/tmdb";
+import { getMovieDetails } from "../api/movies";
+import { IMAGE_BASE_URL, BACKDROP_BASE_URL } from "../api/tmdbImages";
 
 export default function MovieDetailsPage({
     currentUser,
@@ -36,7 +37,7 @@ export default function MovieDetailsPage({
 
     const savedMovie = movie && currentUser
         ? watchlist.find(
-            (item) => item.tmdbId === Number(movie.id)
+            (item) => item.tmdbId === Number(movie.tmdbId)
         )
         : null;
 
@@ -92,10 +93,10 @@ export default function MovieDetailsPage({
             {!loading && movie && (
                 <article className="movie-details">
 
-                    {movie.backdrop_path && (
+                    {movie.backdropPath && (
                         <div className="movie-backdrop">
                             <img
-                                src={`${BACKDROP_BASE_URL}${movie.backdrop_path}`}
+                                src={`${BACKDROP_BASE_URL}${movie.backdropPath}`}
                                 alt=""
                                 className={
                                     backdropLoaded
@@ -114,15 +115,15 @@ export default function MovieDetailsPage({
 
 
                     <div className={
-                        movie.backdrop_path
+                        movie.backdropPath
                             ? "movie-details-content"
                             : "movie-details-content no-backdrop"
                     }>
 
-                        {movie.poster_path ? (
+                        {movie.posterPath ? (
                             <img
                                 className="details-poster"
-                                src={`${IMAGE_BASE_URL}${movie.poster_path}`}
+                                src={`${IMAGE_BASE_URL}${movie.posterPath}`}
                                 alt={`${movie.title} poster`}
                                 width="342"
                                 height="513"
@@ -146,8 +147,8 @@ export default function MovieDetailsPage({
 
                             <div className="details-meta">
                                 <span>
-                                    {movie.release_date
-                                        ? movie.release_date.slice(0, 4)
+                                    {movie.releaseDate
+                                        ? movie.releaseDate.slice(0, 4)
                                         : "Unknown year"}
                                 </span>
 
@@ -158,8 +159,8 @@ export default function MovieDetailsPage({
                                 </span>
 
                                 <span>
-                                    ★ {movie.vote_count > 0
-                                        ? `${movie.vote_average.toFixed(1)}/10`
+                                    ★ {movie.voteCount > 0
+                                        ? `${movie.voteAverage.toFixed(1)}/10`
                                         : "Not rated"}
                                 </span>
                             </div>
@@ -180,7 +181,7 @@ export default function MovieDetailsPage({
                             </p>
 
                             <a
-                                href={`https://www.themoviedb.org/movie/${movie.id}`}
+                                href={`https://www.themoviedb.org/movie/${movie.tmdbId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="tmdb-link"
@@ -205,7 +206,7 @@ export default function MovieDetailsPage({
                                             <button
                                                 type="button"
                                                 className="watchlist-action"
-                                                onClick={() => onToggleWatched(movie.id)}
+                                                onClick={() => onToggleWatched(movie.tmdbId)}
                                             >
                                                 {savedMovie.watched
                                                     ? "Mark as Not Watched"
@@ -215,7 +216,7 @@ export default function MovieDetailsPage({
                                             <button
                                                 type="button"
                                                 className="watchlist-action secondary"
-                                                onClick={() => onRemoveFromWatchlist(movie.id)}
+                                                onClick={() => onRemoveFromWatchlist(movie.tmdbId)}
                                             >
                                                 Remove from Watchlist
                                             </button>
@@ -251,7 +252,7 @@ export default function MovieDetailsPage({
                     </div>
 
                     {/* STREAMING PROVIDERS */}
-                    <WhereToWatch movieId={movie.id} />
+                    <WhereToWatch movieId={movie.tmdbId} />
 
                 </article>
             )}

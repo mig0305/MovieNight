@@ -5,7 +5,7 @@ import { SearchBar } from "../components/SearchBar";
 import { MovieCard } from "../components/MovieCard";
 import LoadingIndicator from "../components/LoadingIndicator";
 
-import { IMAGE_BASE_URL } from "../api/tmdb";
+import { IMAGE_BASE_URL } from "../api/tmdbImages";
 import { useAuth } from "../auth/useAuth";
 
 import {

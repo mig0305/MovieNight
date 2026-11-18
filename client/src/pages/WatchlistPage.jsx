@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { IMAGE_BASE_URL } from "../api/tmdb";
+import { IMAGE_BASE_URL } from "../api/tmdbImages";
 
 export default function WatchlistPage({
     watchlist,

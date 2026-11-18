@@ -21,12 +21,15 @@ Miguel Aoun (242464) · Sara Abi Ghosn (240073)
 | Validation & security | zod, helmet, express-rate-limit, Mongoose `sanitizeFilter` |
 | Database  | MongoDB (Atlas) with Mongoose |
 | Auth      | bcrypt password hashes, JWT (1 h expiry) sent as `Authorization: Bearer <token>` |
-| Third-party API | TMDB (search, details, watch providers) |
+| Third-party API | TMDB, accessed exclusively through the Express backend |
 
 ## Setup
 
-You need **Node.js 20+**, a **MongoDB Atlas** database and a **TMDB API Read
-Access Token** (themoviedb.org → Settings → API, the long token starting with `eyJ`).
+You need **Node.js 20+**, a **MongoDB Atlas** database and a
+**TMDB API Read Access Token** (themoviedb.org → Settings → API).
+
+The TMDB token must be configured exclusively in `server/.env`.
+It is never required or exposed in the React frontend.
 
 ### 1. Back end
 
@@ -41,33 +44,38 @@ npm run dev               # node --watch, restarts on every save
 
 | Variable        | Example | What it is |
 |-----------------|---------|------------|
-| `PORT`          | `3000` | API port |
+| `PORT` | `3000` | Optional API port; defaults to `3000` |
 | `MONGODB_URI`   | `mongodb+srv://…/movie-night` | Atlas connection string |
 | `JWT_SECRET`    | `node -p "crypto.randomBytes(32).toString('hex')"` | Signs tokens. Long and random |
 | `CLIENT_ORIGIN` | `http://localhost:5173` | The Vite app's origin, for CORS. No trailing `/` |
 | `TMDB_TOKEN`    | TMDB "API Read Access Token" | Used by the server's `/api/movies` routes |
 | `TMDB_BASE_URL` | `https://api.themoviedb.org/3` | Optional |
 
-The server refuses to start and names any variable that is missing.
+The server refuses to start if any required variable is missing:
+`MONGODB_URI`, `JWT_SECRET`, `CLIENT_ORIGIN`, or `TMDB_TOKEN`.
+
+`PORT` defaults to `3000`, and `TMDB_BASE_URL` is optional.
+
 
 ### 2. Front end (in a second terminal)
 
 ```bash
 cd client
 npm install
-cp .env.example .env      # then set VITE_TMDB_TOKEN
 npm run dev               # http://localhost:5173
 ```
 
-| Variable          | What it is |
-|-------------------|------------|
-| `VITE_TMDB_TOKEN` | The same TMDB Read Access Token. Used by the Discover and Movie Details pages |
+No TMDB credentials or frontend `.env` file are required for local development.
 
-Vite's dev server proxies every `/api` request to `http://localhost:3000`, so
-the React app and Express work together with no CORS setup during development.
-Vite only reads `.env` when it starts: restart `npm run dev` after editing it.
+The Vite development server proxies `/api` requests to the Express backend
+running on `http://127.0.0.1:3000`.
+
+The optional `VITE_API_URL` variable can be used to specify a different
+backend origin. It is a public URL, not a secret. Leave it empty when
+using the local Vite proxy.
 
 `.env` files are git-ignored; only the `.env.example` files are committed.
+
 
 ## Features
 
@@ -122,8 +130,10 @@ Base URL: `http://localhost:3000/api`. Every body is JSON. Every error is
 | POST   | `/auth/signup` `{ email, password, displayName }` | – | 201 `{ token, user }` | 400, 409 |
 | POST   | `/auth/login` `{ email, password }` | – | 200 `{ token, user }` | 400, 401, 429 |
 | GET    | `/auth/me` | ✔ | 200 `{ user }` | 401 |
+| GET    | `/movies/popular?page=` | – | 200 `{ page, totalPages, results }` | 400, 502 |
 | GET    | `/movies/search?query=&page=` | – | 200 `{ page, totalPages, results }` | 400, 502 |
-| GET    | `/movies/:tmdbId` | – | 200 movie | 400, 404, 502 |
+| GET    | `/movies/:tmdbId/providers` | – | 200 country-specific providers | 400, 404, 502 |
+| GET    | `/movies/:tmdbId` | – | 200 normalized movie details | 400, 404, 502 |
 | GET    | `/nights?status=open\|closed` | ✔ | 200 `[night]` | 401 |
 | POST   | `/nights` `{ title, maxRuntimeMin }` | ✔ | 201 night | 400, 401 |
 | GET    | `/nights/:id` | ✔ member | 200 night + `members`, `suggestions`, `myBallot`, `ballotsCast`, `isOwner` | 401, 404 |
@@ -153,18 +163,47 @@ Every route is ready to send in `server/requests.http` (VS Code **REST Client**)
 
 ## Architecture
 
-```
-React (Vite) :5173 ──/api via Vite proxy + Bearer token──▶ Express API :3000 ──Mongoose──▶ MongoDB Atlas
-        │                                                        │
-        └──── fetch (Discover, Movie Details) ──▶ TMDB ◀── fetch (search, details, suggestions)
-```
+
+                 React Frontend (Vite :5173)
+                            |
+                  /api requests via fetch
+                            |
+                     Vite Proxy
+                            |
+                            v
+                   Express Backend :3000
+                     /             \
+                    /               \
+                   v                 v
+             TMDB API          MongoDB Atlas
+           (TMDB_TOKEN)          (Mongoose)
+                    |
+                    v
+             Movie information
+
+React Frontend
+      |
+      v
+TMDB public image URLs
+(image.tmdb.org)
+      |
+      v
+Posters, backdrops and provider logos
+
+All authenticated TMDB API requests originate from Express.
+The TMDB Read Access Token is stored exclusively in `server/.env`.
+The frontend communicates with Express through `apiRequest()`.
+
+Movie posters, backdrops and provider logos are loaded directly
+from TMDB's public image resources. These image URLs do not require
+the API authentication token.
 
 Every API request runs the line in order:
 `helmet → cors → express.json() → logger → rate limit → router → (requireAuth → validate(zod) → route) → 404 → errorHandler`
 
 ```
 client/src/
-├── api/            backend.js (apiRequest + JWT), nights.js, movies.js, watchlist.js, tmdb.js
+├── api/            backend.js (apiRequest + JWT), nights.js, movies.js, watchlist.js, tmdbImages.js
 ├── auth/           AuthContext (login state, session restore, expiry) + useAuth
 ├── components/     NavBar, MovieCard, NightCard, SearchBar, LoadingIndicator, WhereToWatch
 └── pages/          Discover, MovieDetails, Login, Signup, Nights, CreateNight, JoinNight,
@@ -180,7 +219,7 @@ server/
 │                   memberships (join with a code), watchlist
 ├── services/tmdb.js  TMDB calls + 10-min cache
 ├── utils/          scoring.js, joinCode.js, httpError.js
-└── tests/          api, scoring, watchlist
+└── tests/          api, movies, scoring, watchlist
 ```
 
 Database schema: [`docs/schema.md`](docs/schema.md).
@@ -194,9 +233,11 @@ npm --prefix client run build   # production build
 npm --prefix server test        # API, validation, security and scoring tests
 ```
 
-The server tests import `app.js` without a database: every request they send
-is answered before any MongoDB call. The client tests replace the API
-functions with fakes, so neither needs Express, MongoDB or TMDB to run.
+The server tests import `app.js` without starting a server or requiring
+a MongoDB connection. Movie endpoint tests mock TMDB responses, so
+they do not depend on the external TMDB service.
+
+The client tests mock API functions, so they do not require Express, MongoDB or TMDB to run.
 
 `npm audit` reports advisories only in development tools (Vitest/Vite's file
 matching); `npm audit --omit=dev` reports **0 vulnerabilities** for both the

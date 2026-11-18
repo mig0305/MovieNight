@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import LoadingIndicator from "../components/LoadingIndicator";
-import { IMAGE_BASE_URL } from "../api/tmdb";
+import { IMAGE_BASE_URL } from "../api/tmdbImages";
 import { getNight, getNightResult } from "../api/nights";
 
 const pts = (n) => `${n} ${n === 1 ? "point" : "points"}`;

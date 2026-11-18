@@ -114,7 +114,7 @@ function App() {
         setWatchlistError("");
 
         try {
-            const item = await addToWatchlist(movie.id);
+            const item = await addToWatchlist(movie.tmdbId ?? movie.id);
 
             updateWatchlistItems((items) => [
                 item,

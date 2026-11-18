@@ -1,437 +1,898 @@
-# Movie Night
+# Movie Night — Frontend Documentation
 
-**A collaborative movie picker that helps groups decide what to watch - fairly.**
+**React frontend architecture, components, pages, API communication and implementation guide.**
 
-Movie Night is a React-based movie discovery and group decision-making application. Search real films through **TMDB**, create a private movie-night group, invite friends with a join code, suggest eligible films, rank a top three, use an optional veto, and reveal a winner with an explanation of the result. A personal watchlist, watched status, completed-night history, and country-specific viewing-provider information round out the experience.
+## 1. Overview
 
-> **Current status: frontend prototype, not yet a deployed full-stack application.** The React interfaces and local business logic were built during the frontend phase. Group records, ballots, preview identities, results, and watchlists currently live only in React memory. The Express + MongoDB backend, real authentication, persistent records, and cross-device synchronization are still to be implemented. Do not use real passwords in the preview forms.
+Movie Night is a full-stack collaborative movie selection application. Its frontend is built with **React 19 and Vite** and communicates with an Express backend to provide movie discovery, user authentication, collaborative movie nights, voting, results, personal watchlists and viewing history.
 
-## Contents
+The frontend is responsible for displaying information, collecting user input, managing interface state and communicating with the backend.
 
-- [The idea](#the-idea)
-- [Features](#features)
-- [How Movie Night works](#how-movie-night-works)
-- [Tech stack](#tech-stack)
-- [Quick start](#quick-start)
-- [Available commands](#available-commands)
-- [Pages and routes](#pages-and-routes)
-- [Frontend architecture](#frontend-architecture)
-- [Business rules and voting](#business-rules-and-voting)
-- [TMDB integration](#tmdb-integration)
-- [Testing and quality checks](#testing-and-quality-checks)
-- [Demo walkthrough](#demo-walkthrough)
-- [Current limitations](#current-limitations)
-- [Backend roadmap](#backend-roadmap)
-- [GitHub submission notes](#github-submission-notes)
-- [Troubleshooting](#troubleshooting)
-- [Attribution and contributors](#attribution-and-contributors)
+Persistent data, authentication verification, business-rule enforcement and official result calculations are handled by the backend and MongoDB.
 
-## The idea
+### Main frontend responsibilities
 
-Choosing a film with friends can become a negotiation: proposals disappear in chat, available time is limited, and the loudest person often decides. **Movie Night** gives everyone a structured voice.
+- Display popular movies and allow users to search for films.
+- Present detailed movie information and streaming availability.
+- Provide signup, login and logout interfaces.
+- Allow authenticated users to create and join movie nights.
+- Display room members, suggested movies and voting progress.
+- Allow members to submit and update their ballots.
+- Display the official results returned by the backend.
+- Manage personal watchlists and completed-night history.
 
-A host creates a group with a maximum movie runtime and shares a short invitation code. Members discover movies via TMDB and contribute suggestions. Each member ranks three different movies (3, 2, and 1 point) and may veto one other movie. After everybody has voted, the host closes the night and the application calculates a winner, applying the runtime and veto rules and using TMDB ratings to resolve point ties. The results explain why each other movie did not win.
+## 2. Technology stack
 
-**Intended users:** friends, housemates, families, clubs, and other groups organizing a shared screening.
+| Technology | Purpose |
+|---|---|
+| React 19 | Building reusable components and interactive interfaces |
+| Vite | Development server and production build tool |
+| React Router | Client-side navigation and route management |
+| JavaScript / JSX | Application logic and component rendering |
+| React Hooks | State management and side effects |
+| React Context API | Sharing authentication state across components |
+| Fetch API | Communicating with the Express backend |
+| CSS | Styling, responsive layouts and animations |
+| Vitest | Frontend automated testing |
+| React Testing Library | Testing components and user interactions |
+| jsdom | Simulating a browser environment during tests |
+| oxlint | Static code analysis |
 
-## Features
+## 3. Application architecture
 
-### Movie discovery
+The frontend does not communicate directly with MongoDB or make authenticated TMDB API requests.
 
-- Search for films by title using the real TMDB API.
-- Browse popular films on the Discover page.
-- Open a details page with synopsis, release date, genres, rating, runtime, poster, and backdrop.
-- View streaming/rental/purchase availability by selected country, where TMDB has data.
-- Smooth backdrop reveal, animated loading feedback, error messages, and responsive movie cards.
-- Context-aware return navigation from a movie back to Discover, a Night Room, Watchlist, or Results when opened from those pages.
-
-### Collaborative movie nights (frontend preview)
-
-- Signup, login, and logout **interfaces** with form validation and temporary preview identity.
-- Create a night with a title and maximum runtime.
-- Generate a six-character join code; join an active night using that code.
-- List active nights, memberships, and completed nights.
-- Search TMDB inside a Night Room and suggest movies after checking their actual runtime.
-- Prevent duplicate suggestions and let contributors remove their own suggestions.
-- Cast or edit a ballot with three unique ranked selections and up to one veto outside that top three.
-- Show per-night voting progress.
-- Allow the host to finalize only after all current members have voted.
-- Display the winner, eligible runners-up, exclusions, and human-readable reasons.
-- Browse completed-night history and revisit results.
-
-### Personal features (frontend preview)
-
-- Add films to a personal watchlist from movie details.
-- Mark films watched or not watched, remove them, and filter by status.
-- Keep watchlist entries separate between preview identities **within the same running app**.
-
-### UX and quality
-
-- React Router navigation and 404 fallback.
-- Responsive dark cinema-inspired interface and keyboard-focus styles.
-- Reusable search and loading components.
-- Frontend tests for the winner-calculation logic (and a prepared NightCard component test, if copied into the current project).
-
-### Deliberately not included yet
-
-- Downloadable/shareable result PNG cards (postponed).
-- Official TMDB logo in the footer (must be added before public deployment).
-- Backend authentication and database persistence.
-- True live updates between separate devices/browsers.
-- Production deployment and backend automated tests.
-
-## How Movie Night works
-
-1. **Discover:** Search or browse a film, and inspect its details and viewing availability.
-2. **Enter the preview:** Use the Signup or Login form with dummy data. This is **not** real account registration or password validation.
-3. **Create or join:** The host selects a title and runtime cap; other members enter the join code.
-4. **Suggest:** Members search TMDB inside the Night Room. Before adding a film, the app fetches full details and checks runtime, duplicates, and membership.
-5. **Vote:** Each member ranks three distinct suggested films. A veto is optional and must target a different suggestion.
-6. **Finalize:** After all current members submit a ballot, the host closes voting. The app freezes the calculated result in the completed-night object.
-7. **Review:** Members see the winner, runner-up ranking, veto/runtime exclusions, and the explanations. They can also revisit the result from History.
-8. **Watchlist:** Independently save films and track whether they have been watched.
-
-## Tech stack
-
-| Area | Current technology | Why |
-| --- | --- | --- |
-| UI | React, JSX, plain CSS | Small reusable components and state-driven rendering |
-| Tooling | Vite | Fast local development and production bundling |
-| Navigation | React Router | Named pages, dynamic movie/night URLs, guarded UI routes |
-| API consumption | Browser `fetch`, `async` / `await` | Simple TMDB HTTP requests |
-| Movie data | TMDB API v3 | Search, popular, details, runtime, posters, providers |
-| State | React `useState`, props, `useEffect` | Deliberately straightforward frontend course patterns |
-| Frontend tests | Vitest + React Testing Library + jsdom | Component and business-logic checks |
-| Lint | oxlint | Static code checks |
-| Planned API | Node.js + Express | Server-side authentication, authorization, REST routes |
-| Planned storage | MongoDB + Mongoose | Persistent users, nights, suggestions, ballots, and watchlists |
-
-## Quick start
-
-**Requirements:** Node.js and npm installed; a valid **TMDB API Read Access Token**. Use a current Node.js release compatible with the locally installed Vite and Vitest versions (`node -v`).
-
-1. Open a terminal at the root of the React project (the folder containing `package.json`).
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. In the **frontend project root**, create a `.env` file:
-
-   ```env
-   VITE_TMDB_TOKEN=your_tmdb_api_read_access_token
-   ```
-
-   `VITE_TMDB_API_KEY` is **not needed** by the implementation using the Bearer token. Never commit `.env` to Git.
-
-4. Start the frontend:
-
-   ```bash
-   npm run dev
-   ```
-
-5. Open the local URL printed by Vite (commonly `http://localhost:5173/`).
-
-**Environment variable caution:** A variable beginning with `VITE_` is included in code delivered to the browser. The TMDB credential is therefore **not secret** in the current frontend-only architecture. Use a development token and, before publishing, move all TMDB calls and the token into the Express backend as `TMDB_TOKEN`.
-
-### Suggested local testing sequence
-
-- Open Discover and search for a film.
-- Visit a film details page; check runtime and Where to Watch.
-- Log in with a **dummy email and dummy password** (the preview is not authenticating anything).
-- Create a night and copy its invitation code.
-- Suggest at least three eligible films (four if testing veto).
-- Log out and log in with a second **dummy identity**, without refreshing; join by code.
-- Submit ballots for all members, then return as host and finalize.
-- Open Results, History, and Watchlist.
-
-**Important:** Refreshing the page resets the preview login, nights, suggestions, votes, results, and watchlists.
-
-## Available commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start Vite's development server |
-| `npm test` | Run the Vitest test suite (requires a `"test": "vitest run"` script in `package.json`) |
-| `npm run build` | Create an optimized frontend bundle in `dist/` |
-| `npm run preview` | Preview the built bundle locally |
-| `npm run lint` | Run oxlint on the project |
-
-The dev server can stay running in one terminal while the other commands run in a second terminal. Passing a production build does **not** prove that backend-dependent features are implemented.
-
-## Pages and routes
-
-| Route | Page | Access in this prototype |
-| --- | --- | --- |
-| `/` | DiscoverPage | Public |
-| `/movie/:id` | MovieDetailsPage | Public |
-| `/login` | LoginPage | Guest UI |
-| `/signup` | SignupPage | Guest UI |
-| `/nights` | NightsPage | Preview identity required |
-| `/nights/new` | CreateNightPage | Preview identity required |
-| `/nights/join` | JoinNightPage | Preview identity required |
-| `/nights/:id` | NightRoomPage | Preview identity and night membership |
-| `/nights/:id/vote` | VotePage | Preview identity and night membership |
-| `/nights/:id/results` | ResultsPage | Preview identity and night membership |
-| `/watchlist` | WatchlistPage | Preview identity required |
-| `/history` | HistoryPage | Preview identity required |
-| Any unmatched path | 404 fallback | Public |
-
-The guards in React improve navigation only. **They cannot replace Express authentication and ownership checks.**
-
-## Frontend architecture
-
-```mermaid
-flowchart TD
-  Browser[Browser / Vite / React] --> Router[App.jsx + React Router]
-  Router --> Pages[Page components]
-  Pages --> Shared[Reusable components]
-  Router --> State[Temporary React state]
-  Pages --> API[src/api/tmdb.js]
-  API --> TMDB[TMDB API]
-  Router --> Score[src/utils/calculateResults.js]
-  State --> Score
-  Score --> Results[Saved result snapshot in nights state]
-```
-
-### Source layout
+Instead, all application data is retrieved through the Express backend.
 
 ```text
-movie-app-frontend/
-├── .env                     # local only; never commit
-├── .gitignore
-├── .oxlintrc.json
+                 REACT FRONTEND
+                  Vite :5173
+                       |
+                       |
+              React components/pages
+                       |
+                       v
+                 API MODULES
+       backend.js / movies.js / nights.js
+                 watchlist.js
+                       |
+                       v
+                  apiRequest()
+                       |
+                       v
+                 VITE PROXY
+                       |
+                       v
+                EXPRESS BACKEND
+                   :3000
+                  /      \
+                 /        \
+                v          v
+             TMDB API   MongoDB Atlas
+                |        (Mongoose)
+                |
+                v
+          Movie information
+```
+
+Movie posters, backdrops and provider logos are a separate case:
+
+```text
+React Frontend
+      |
+      v
+TMDB public image URLs
+(image.tmdb.org)
+      |
+      v
+Posters, backdrops and provider logos
+```
+
+These public image resources do not require the TMDB API authentication token.
+
+### Important architectural distinction
+
+- React handles the user interface and temporary presentation state.
+- Express handles API requests, authentication, authorization and business rules.
+- MongoDB stores persistent application data.
+- TMDB provides external movie information.
+- The backend calculates the official voting results.
+
+The frontend never connects directly to MongoDB.
+
+## 4. Getting started
+
+### Requirements
+
+- Node.js and npm.
+- The complete Movie Night project containing `client/` and `server/`.
+- A configured MongoDB Atlas database.
+- A valid TMDB API Read Access Token configured on the backend.
+
+Refer to the root [`README.md`](../README.md) for the complete backend configuration and environment variables.
+
+### 4.1 Install frontend dependencies
+
+From the project root:
+
+```bash
+npm --prefix client install
+```
+
+Alternatively:
+
+```bash
+cd client
+npm install
+```
+
+### 4.2 Configure frontend environment variables
+
+No frontend TMDB credentials are required.
+
+The optional `VITE_API_URL` variable can specify the backend origin:
+
+```env
+VITE_API_URL=
+```
+
+Leave it empty during local development.
+
+The existing Vite configuration automatically proxies `/api` requests to:
+
+```text
+http://127.0.0.1:3000
+```
+
+If a different backend origin is configured, provide only the origin, without appending `/api`.
+
+**Security:** Never put `TMDB_TOKEN`, `JWT_SECRET`, MongoDB credentials or other private credentials in frontend environment variables. Variables beginning with `VITE_` are exposed to the browser.
+
+### 4.3 Start the backend
+
+Open the first terminal:
+
+```bash
+cd server
+npm install
+npm run dev
+```
+
+The backend should connect to MongoDB and listen on port 3000.
+
+### 4.4 Start the frontend
+
+Open a second terminal:
+
+```bash
+cd client
+npm run dev
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+Both processes must remain running while using the application locally.
+
+The frontend communicates with Express through the Vite proxy, so both applications can operate simultaneously on the same computer.
+
+## 5. Pages and routes
+
+The application's routes are defined in `client/src/App.jsx`.
+
+| Route | Page component | Access |
+|---|---|---|
+| `/` | DiscoverPage | Public |
+| `/movie/:id` | MovieDetailsPage | Public |
+| `/login` | LoginPage | Guest |
+| `/signup` | SignupPage | Guest |
+| `/nights` | NightsPage | Authenticated |
+| `/nights/new` | CreateNightPage | Authenticated |
+| `/nights/join` | JoinNightPage | Authenticated |
+| `/nights/:id` | NightRoomPage | Authenticated |
+| `/nights/:id/vote` | VotePage | Authenticated |
+| `/nights/:id/results` | ResultsPage | Authenticated |
+| `/watchlist` | WatchlistPage | Authenticated |
+| `/history` | HistoryPage | Authenticated |
+| Any unmatched route | 404 fallback | Public |
+
+### 5.1 DiscoverPage.jsx
+
+**Purpose:** Main movie discovery page.
+
+Responsibilities:
+
+- Retrieve popular movies through the Express backend.
+- Search for movies by title.
+- Display search results.
+- Allow users to return to popular movies.
+- Handle loading and error states.
+
+It uses:
+
+- `getPopularMovies()`
+- `searchMovies()`
+- `SearchBar`
+- `MovieList`
+- `LoadingIndicator`
+
+### 5.2 MovieDetailsPage.jsx
+
+**Purpose:** Display complete information about a selected movie.
+
+Responsibilities:
+
+- Retrieve movie details using its TMDB ID.
+- Display the movie title, poster, backdrop, tagline, genres, release year, runtime, rating and overview.
+- Display the external TMDB movie reference.
+- Allow authenticated users to add movies to their watchlist, mark them as watched or remove them.
+- Display streaming availability through `WhereToWatch`.
+- Preserve the previous page when navigating back to movie details.
+
+Movie details are retrieved through `getMovieDetails()`.
+
+### 5.3 LoginPage.jsx and SignupPage.jsx
+
+**Purpose:** Provide real user authentication interfaces.
+
+Login:
+
+- Collects email and password.
+- Calls the login function provided by `AuthContext`.
+- Displays authentication errors.
+- Redirects successfully authenticated users to Discover.
+
+Signup:
+
+- Collects display name, email, password and password confirmation.
+- Performs basic client-side validation.
+- Calls the signup function provided by `AuthContext`.
+- Redirects successfully registered users to Discover.
+
+The backend remains responsible for verifying credentials, hashing passwords and issuing JWTs.
+
+### 5.4 NightsPage.jsx
+
+**Purpose:** Display the user's movie nights.
+
+Responsibilities:
+
+- Retrieve nights associated with the authenticated user.
+- Display active and closed nights.
+- Allow users to access individual rooms.
+- Provide navigation to create or join a night.
+
+Uses `getMyNights()` and the reusable `NightCard` component.
+
+### 5.5 CreateNightPage.jsx
+
+**Purpose:** Create a new movie night.
+
+The user provides:
+
+- Night title.
+- Maximum movie runtime.
+
+The component calls `createNight()` and redirects the user to the newly created night.
+
+### 5.6 JoinNightPage.jsx
+
+**Purpose:** Join an existing movie night.
+
+Responsibilities:
+
+- Collect a six-character invitation code.
+- Normalize the code to uppercase.
+- Submit the code through `joinNight()`.
+- Display errors when joining is unsuccessful.
+
+### 5.7 NightRoomPage.jsx
+
+**Purpose:** Main collaborative movie-night interface.
+
+Responsibilities:
+
+- Retrieve room information, members and suggestions.
+- Display the host and other participants.
+- Search for movies through Express.
+- Retrieve movie details and runtime before suggesting a movie.
+- Add and remove suggestions.
+- Display voting progress.
+- Allow the host to close voting when backend rules permit it.
+- Refresh room information periodically.
+
+The room refreshes its data every 15 seconds rather than relying on WebSockets.
+
+Important API functions:
+
+- `getNight()`
+- `searchNightMovies()`
+- `getNightMovie()`
+- `addNightSuggestion()`
+- `removeNightSuggestion()`
+- `closeNightVoting()`
+
+The backend independently validates suggestions, runtime restrictions, membership and host permissions.
+
+### 5.8 VotePage.jsx
+
+**Purpose:** Allow each member to submit or update a ballot.
+
+Responsibilities:
+
+- Retrieve available movie suggestions.
+- Allow the user to rank three distinct movies.
+- Allow one optional veto outside the ranked selections.
+- Validate the selections before submission.
+- Save the ballot through `saveNightBallot()`.
+- Display success and error messages.
+
+The ballot is stored in MongoDB through Express.
+
+Users can update their ballots while voting remains open, subject to backend rules.
+
+### 5.9 ResultsPage.jsx
+
+**Purpose:** Display the official outcome of a completed movie night.
+
+Responsibilities:
+
+- Retrieve night information and the official result.
+- Display the winning movie.
+- Display runners-up and excluded movies.
+- Show points, ratings and explanations.
+- Display the number of submitted ballots.
+- Provide navigation back to the Night Room.
+
+The result is calculated by the backend. React only presents the returned information.
+
+Results are displayed as final once the host has closed voting.
+
+### 5.10 WatchlistPage.jsx
+
+**Purpose:** Manage the authenticated user's personal watchlist.
+
+Responsibilities:
+
+- Display saved movies.
+- Filter watched and unwatched movies.
+- Display watched and unwatched counts.
+- Mark movies as watched or not watched.
+- Remove movies from the watchlist.
+- Navigate to movie details.
+
+Watchlist records are persisted in MongoDB and belong to individual users.
+
+### 5.11 HistoryPage.jsx
+
+**Purpose:** Display previously completed movie nights.
+
+Responsibilities:
+
+- Retrieve the user's nights.
+- Identify closed nights.
+- Retrieve their official results.
+- Display winning movies and voting information.
+- Search by night title or winning movie.
+- Sort completed nights by date.
+
+History is derived from the user's closed movie nights and their corresponding result endpoints.
+
+## 6. Reusable components
+
+Reusable components are stored in `client/src/components/`.
+
+| Component | File | Responsibility |
+|---|---|---|
+| Navbar | `NavBar.jsx` | Main navigation, authenticated user information and logout |
+| SearchBar | `SearchBar.jsx` | Controlled movie search input and submission |
+| MovieCard | `MovieCard.jsx` | Displays an individual movie poster, title, year and rating |
+| MovieList | `MovieList.jsx` | Renders collections of MovieCard components |
+| NightCard | `NightCard.jsx` | Displays movie-night information and membership status |
+| WhereToWatch | `WhereToWatch.jsx` | Displays country-specific streaming and rental providers |
+| LoadingIndicator | `LoadingIndicator.jsx` | Reusable animated loading feedback |
+
+### Component relationships
+
+**MovieList → MovieCard**
+
+MovieList receives an array of movies and renders an individual MovieCard for each movie.
+
+**MovieDetailsPage → WhereToWatch**
+
+WhereToWatch receives the selected movie ID and retrieves its available providers.
+
+**App → Navbar**
+
+App supplies the authenticated user and logout handler to Navbar.
+
+**NightsPage → NightCard**
+
+NightsPage renders each movie night through the reusable NightCard component.
+
+## 7. Authentication and global state
+
+### 7.1 AuthContext.jsx
+
+`AuthContext` provides authentication information and functions throughout the React application.
+
+It is initialized in `main.jsx` through:
+
+```jsx
+<AuthProvider>
+    <App />
+</AuthProvider>
+```
+
+The provider manages:
+
+- `currentUser`
+- `token`
+- `authLoading`
+- `authError`
+- `login()`
+- `signup()`
+- `logout()`
+
+### 7.2 useAuth.js
+
+Exports the custom `useAuth()` hook.
+
+Components use this hook to access the authentication context without importing or managing the context directly.
+
+Example:
+
+```javascript
+const { currentUser, login, logout } = useAuth();
+```
+
+The hook also checks that it is used within an `AuthProvider`.
+
+### 7.3 Session restoration
+
+When the application starts:
+
+1. AuthContext checks whether a JWT exists in localStorage.
+2. If a token exists, it sends an authenticated request to `/api/auth/me`.
+3. Express verifies the token and returns the user.
+4. React restores the authenticated state.
+5. If the token is expired or invalid, the session is cleared.
+
+The token is stored using the key:
+
+```javascript
+movieNightToken
+```
+
+Logging out removes the token and clears the current user.
+
+The frontend also listens for authentication expiration events and browser storage changes.
+
+**Important:** The JWT is currently stored in localStorage and sent through the `Authorization: Bearer` header. The backend remains responsible for validating it on protected routes.
+
+### 7.4 Route protection
+
+`App.jsx` checks `currentUser` before displaying protected pages.
+
+Unauthenticated users attempting to access protected routes are redirected to `/login`.
+
+These frontend checks improve navigation and user experience. Actual access control and authorization are enforced by Express.
+
+### 7.5 Watchlist state
+
+`App.jsx` maintains the currently authenticated user's watchlist.
+
+When the user logs in:
+
+1. The frontend retrieves the watchlist from Express.
+2. The returned items are stored in React state.
+3. Components receive the relevant watchlist data and callbacks.
+4. Add, remove and watched-status operations update MongoDB through the API.
+5. The local React state is updated using the backend response.
+
+The watchlist is associated with the authenticated user's ID to prevent displaying one user's records to another.
+
+## 8. Frontend API layer
+
+API modules are located in:
+
+```text
+client/src/api/
+```
+
+They separate HTTP communication from React components.
+
+### 8.1 backend.js
+
+The central API helper.
+
+Main responsibilities:
+
+- Build backend request URLs.
+- Add the `/api` prefix.
+- Retrieve the stored JWT for authenticated requests.
+- Attach the `Authorization` header.
+- Serialize JSON request bodies.
+- Handle HTTP errors.
+- Handle empty `204 No Content` responses.
+- Detect authentication expiration.
+- Support request cancellation through AbortController signals.
+
+The main exported function is:
+
+```javascript
+apiRequest(path, options)
+```
+
+By default, requests are authenticated. Public endpoints explicitly use:
+
+```javascript
+{ authenticated: false }
+```
+
+### 8.2 movies.js
+
+Handles all movie-data requests through Express.
+
+Main functions:
+
+| Function | Responsibility |
+|---|---|
+| `getPopularMovies()` | Retrieve popular movies |
+| `searchMovies()` | Search movies for Discover |
+| `getMovieDetails()` | Retrieve complete movie information |
+| `getWatchProviders()` | Retrieve country-specific viewing providers |
+| `searchNightMovies()` | Search movies within a Night Room |
+| `getNightMovie()` | Retrieve movie details for runtime verification |
+
+Movie API requests are public and do not require user authentication.
+
+The module uses `apiRequest()` rather than making direct authenticated requests to TMDB.
+
+### 8.3 nights.js
+
+Handles movie-night operations.
+
+Main functions:
+
+- `getMyNights()`
+- `createNight()`
+- `joinNight()`
+- `getNight()`
+- `addNightSuggestion()`
+- `removeNightSuggestion()`
+- `saveNightBallot()`
+- `closeNightVoting()`
+- `getNightResult()`
+
+These requests require an authenticated user.
+
+### 8.4 watchlist.js
+
+Handles personal watchlist operations.
+
+Main functions:
+
+- `getWatchlist()`
+- `addToWatchlist()`
+- `setWatchlistWatched()`
+- `removeFromWatchlist()`
+
+All operations communicate with Express and are associated with the authenticated user.
+
+### 8.5 tmdbImages.js
+
+Contains public TMDB image URL constants:
+
+```javascript
+export const IMAGE_BASE_URL =
+    "https://image.tmdb.org/t/p/w500";
+
+export const BACKDROP_BASE_URL =
+    "https://image.tmdb.org/t/p/w1280";
+```
+
+These constants are used to construct poster, backdrop and provider-logo image URLs.
+
+They do not contain API credentials and do not make API requests.
+
+### 8.6 API request examples
+
+The frontend communicates with the following movie endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/movies/popular?page=` | Popular movies |
+| GET | `/api/movies/search?query=&page=` | Movie search |
+| GET | `/api/movies/:tmdbId` | Movie details |
+| GET | `/api/movies/:tmdbId/providers` | Viewing providers |
+
+The frontend also communicates with authentication, nights, memberships, ballots, results and watchlist endpoints.
+
+For the complete endpoint list and request formats, refer to the root README.
+
+## 9. Movie data and TMDB integration
+
+TMDB is the external movie information provider.
+
+The frontend uses it for:
+
+- Popular movies.
+- Movie search.
+- Movie details.
+- Runtime information.
+- Streaming and rental availability.
+- Movie posters and backdrops.
+- Provider logos.
+
+### Request flow
+
+For movie information:
+
+1. A React page calls a function from `movies.js`.
+2. The function uses `apiRequest()` to send a request to Express.
+3. Express calls the TMDB service using its private token.
+4. TMDB returns the requested information.
+5. Express normalizes the response and returns JSON.
+6. React updates its state and renders the information.
+
+The TMDB Read Access Token is stored exclusively in `server/.env`.
+
+It must never be included in frontend environment variables or browser requests.
+
+### Movie image handling
+
+Image URLs are constructed using the constants exported by `tmdbImages.js`.
+
+For example:
+
+```javascript
+const posterUrl = IMAGE_BASE_URL + movie.posterPath;
+```
+
+These public image requests are allowed to go directly to TMDB's image server because they do not require the private API token.
+
+## 10. Application state and business rules
+
+React manages interface-related state such as:
+
+- Current search results.
+- Loading and error messages.
+- Form inputs.
+- Selected filters.
+- Temporary display information.
+- The currently loaded movie-night information.
+
+Persistent application records are managed by the backend.
+
+### Important distinction: frontend versus backend responsibilities
+
+| Operation | Frontend responsibility | Backend responsibility |
+|---|---|---|
+| Authentication | Collect credentials and maintain session state | Verify credentials and issue JWT |
+| Movie discovery | Display results and handle searches | Retrieve data from TMDB |
+| Suggestions | Collect and display suggestions | Validate runtime, membership and duplicates |
+| Voting | Collect rankings and veto selection | Validate and persist ballots |
+| Finalization | Provide host controls | Enforce permissions and close voting |
+| Results | Display winner and explanations | Calculate official results |
+| Watchlist | Display and update interface state | Persist user-specific records |
+| History | Display completed nights | Retrieve persisted nights and results |
+
+### Voting rules
+
+The frontend provides the controls for:
+
+- Three distinct ranked movie selections.
+- First choice: 3 points.
+- Second choice: 2 points.
+- Third choice: 1 point.
+- One optional veto outside the ranked selections.
+
+The backend validates ballots and calculates the official result.
+
+The scoring process excludes movies that violate the runtime cap or are vetoed. Remaining movies are ranked by points, with TMDB rating and title used as tie-breakers.
+
+The frontend does not independently calculate the official winner.
+
+## 11. Performance, navigation and user experience
+
+### Code splitting
+
+`App.jsx` uses React `lazy()` and `Suspense` to load most page components when needed.
+
+Discover is loaded directly, while pages such as Movie Details, Night Room, Voting, Results and Watchlist are lazy-loaded.
+
+The reusable LoadingIndicator is used as a fallback while pages load.
+
+### Loading and error handling
+
+Pages maintain loading and error states using React hooks.
+
+The LoadingIndicator component displays animated loading feedback.
+
+API errors are caught and presented through the relevant page or component.
+
+### Movie images
+
+MovieCard uses lazy loading for ordinary movie posters and supports eager loading for priority images.
+
+Movie Details prioritizes its large backdrop image and uses a loading state for its reveal animation.
+
+### Navigation
+
+React Router handles navigation without full-page reloads.
+
+Movie cards can preserve the originating page through navigation state. This allows users to return to the Night Room, Results, Watchlist or other relevant page after viewing movie details.
+
+### Responsive design
+
+The application styling is maintained through:
+
+- `App.css`
+- `index.css`
+
+These files define the application's layout, movie cards, forms, navigation, responsive behavior, loading animations and visual states.
+
+## 12. Testing and quality checks
+
+The frontend uses:
+
+- **Vitest** for executing automated tests.
+- **React Testing Library** for rendering components and testing interactions.
+- **jsdom** for providing a simulated browser environment.
+- **oxlint** for static code analysis.
+
+Tests are located alongside their relevant components and pages.
+
+Current test files include:
+
+| Test file | Main purpose |
+|---|---|
+| `SearchBar.test.jsx` | Search input and submission |
+| `NightCard.test.jsx` | Movie-night card rendering |
+| `NightRoomPage.test.jsx` | Room behavior and suggestion interactions |
+| `VotePage.test.jsx` | Ballot selection and submission |
+| `ResultsPage.test.jsx` | Results rendering |
+| `WatchlistPage.test.jsx` | Watchlist interactions |
+| `HistoryPage.test.jsx` | Completed-night history |
+
+Frontend tests mock API functions and therefore do not require a running Express server, MongoDB database or live TMDB connection.
+
+### Run the tests
+
+From the project root:
+
+```bash
+npm --prefix client test
+```
+
+### Run lint
+
+```bash
+npm --prefix client run lint
+```
+
+### Create a production build
+
+```bash
+npm --prefix client run build
+```
+
+### Preview the production build
+
+```bash
+cd client
+npm run preview
+```
+
+A successful build confirms that Vite can compile the frontend. It does not independently verify that the backend or database is available.
+
+## 13. Frontend folder structure
+
+The following is the intended frontend structure after the TMDB migration:
+
+```text
+client/
+│
+├── public/
+│
+├── src/
+│   │
+│   ├── api/
+│   │   ├── backend.js
+│   │   ├── movies.js
+│   │   ├── nights.js
+│   │   ├── watchlist.js
+│   │   └── tmdbImages.js
+│   │
+│   ├── auth/
+│   │   ├── AuthContext.jsx
+│   │   └── useAuth.js
+│   │
+│   ├── components/
+│   │   ├── LoadingIndicator.jsx
+│   │   ├── MovieCard.jsx
+│   │   ├── MovieList.jsx
+│   │   ├── NavBar.jsx
+│   │   ├── NightCard.jsx
+│   │   ├── SearchBar.jsx
+│   │   └── WhereToWatch.jsx
+│   │
+│   ├── pages/
+│   │   ├── CreateNightPage.jsx
+│   │   ├── DiscoverPage.jsx
+│   │   ├── HistoryPage.jsx
+│   │   ├── JoinNightPage.jsx
+│   │   ├── LoginPage.jsx
+│   │   ├── MovieDetailsPage.jsx
+│   │   ├── NightRoomPage.jsx
+│   │   ├── NightsPage.jsx
+│   │   ├── ResultsPage.jsx
+│   │   ├── SignupPage.jsx
+│   │   ├── VotePage.jsx
+│   │   └── WatchlistPage.jsx
+│   │
+│   ├── App.css
+│   ├── App.jsx
+│   ├── index.css
+│   ├── main.jsx
+│   ├── popcorn.png
+│   └── setupTests.js
+│
 ├── index.html
 ├── package.json
 ├── package-lock.json
 ├── vite.config.js
-├── public/                  # static assets (official TMDB logo still pending)
-└── src/
-    ├── main.jsx            # React root mount
-    ├── App.jsx             # routes, preview state, shared actions
-    ├── index.css           # global styles, layout, responsiveness and animations
-    ├── App.css             # additional application styles (check if actively imported)
-    ├── popcorn.png         # project branding asset
-    ├── api/
-    │   └── tmdb.js         # TMDB search, popular, details, providers
-    ├── components/
-    │   ├── Navbar.jsx
-    │   ├── SearchBar.jsx
-    │   ├── MovieCard.jsx
-    │   ├── MovieList.jsx
-    │   ├── NightCard.jsx
-    │   ├── LoadingIndicator.jsx
-    │   └── WhereToWatch.jsx
-    ├── pages/
-    │   ├── DiscoverPage.jsx
-    │   ├── MovieDetailsPage.jsx
-    │   ├── LoginPage.jsx
-    │   ├── SignupPage.jsx
-    │   ├── NightsPage.jsx
-    │   ├── CreateNightPage.jsx
-    │   ├── JoinNightPage.jsx
-    │   ├── NightRoomPage.jsx
-    │   ├── VotePage.jsx
-    │   ├── ResultsPage.jsx
-    │   ├── WatchlistPage.jsx
-    │   └── HistoryPage.jsx
-    └── utils/
-        ├── calculateResults.js
-        └── calculateResults.test.js
+├── .env.example
+└── README_Frontend.md
 ```
 
-This tree reflects the files visible in the latest VS Code screenshot and the features built during our guided frontend steps. It is not an independently verified export of the final working directory. Check whether `App.css` is imported before removing or changing it. The currently visible test file is `src/utils/calculateResults.test.js`.
+Individual `.test.jsx` files are also maintained alongside the components and pages they test.
 
-### Data ownership and components
+### Important file responsibilities
 
-- **`App.jsx`** owns the prototype's common state: `currentUser`, `nights`, `suggestions`, `votes`, and `watchlist`.
-- Pages receive the relevant state and callbacks through **props**. This is basic **lifting state up**, not Redux or Context.
-- Pages own transient local UI state, such as a search query, loading flag, form fields, or error message.
-- **`src/api/tmdb.js`** centralizes HTTP requests; components should not duplicate TMDB headers or URLs.
-- **`calculateNightResults()`** is a pure data-calculation function; React renders its returned result.
-- The result is saved as a snapshot on a completed night, so later visits do not recalculate a finalized outcome.
+| File | Responsibility |
+|---|---|
+| `main.jsx` | Initializes React and wraps the application in AuthProvider |
+| `App.jsx` | Defines routes, page access, lazy loading and global watchlist handlers |
+| `AuthContext.jsx` | Authentication state and session management |
+| `useAuth.js` | Custom hook for accessing authentication context |
+| `backend.js` | Central HTTP communication helper |
+| `movies.js` | Movie API functions |
+| `nights.js` | Movie-night API functions |
+| `watchlist.js` | Watchlist API functions |
+| `tmdbImages.js` | Public TMDB image URL constants |
+| `index.css` | Global styling |
+| `App.css` | Application-specific styling |
+| `vite.config.js` | Vite development server, API proxy and Vitest configuration |
+| `setupTests.js` | Frontend test setup |
 
-### Simplified data objects
+## 14. Current scope and limitations
 
-```js
-// Night
-{
-  id, title, maxRuntimeMin, joinCode,
-  ownerEmail, memberEmails: [],
-  status: 'active' | 'completed',
-  createdAt, finalizedAt?, result?
-}
+The following features are intentionally outside the current implementation scope:
 
-// Suggestion
-{
-  id, nightId, tmdbId, title,
-  posterPath, runtime, voteAverage, addedByEmail
-}
+- Downloadable/shareable movie-night results PNG.
+- The additional branded TMDB logo treatment in the footer.
+- Public production deployment, which will be handled separately.
 
-// Ballot - one per user per night
-{
-  nightId, userEmail,
-  rankedIds: [firstSuggestionId, secondSuggestionId, thirdSuggestionId],
-  vetoId: suggestionIdOrNull
-}
+The application uses periodic room refreshes rather than WebSocket-based communication.
 
-// Watchlist entry
-{
-  userEmail, tmdbId, title, posterPath,
-  releaseDate, runtime, voteAverage,
-  watched, addedAt, watchedAt
-}
-```
+Movie provider availability depends on the information supplied by TMDB and may vary by country.
 
-These are **frontend preview data shapes**, not finalized MongoDB schemas. The backend will use stable MongoDB IDs and real user references, not email strings as the primary ownership identifiers.
+The application requires a functioning backend connection for authenticated and persistent features.
 
-## Business rules and voting
+## 15. Related documentation
 
-### Suggestion eligibility
+For further project information, consult:
 
-- The night must exist and still be active.
-- The user must be a member.
-- Full TMDB movie details are fetched on suggestion, because search results do not consistently contain runtime.
-- Runtime must be known, positive, and at most the night limit.
-- The same TMDB movie cannot be suggested twice in one night.
-- A member can remove only suggestions they personally added.
+- [`../README.md`](../README.md) — Complete project overview, setup, backend API, architecture and testing instructions.
+- [`../docs/schema.md`](../docs/schema.md) — MongoDB collections, fields, relationships and backend-enforced rules.
 
-### Ballot rules
+---
 
-- At least three suggestions are needed.
-- Exactly three **different** suggestion IDs are ranked.
-- Rank points are **3 / 2 / 1**.
-- One veto is **optional** and cannot target a ranked movie.
-- Submitting again replaces that member's existing ballot.
-- Removing a suggested film invalidates ballots referring to it, so affected members must vote again.
+**Movie Night — Frontend Documentation**
 
-### Closing and scoring
-
-The host can finalize only when all **current** members have cast a ballot. For each suggestion, the calculation totals points and vetoes, excludes movies with an invalid/over-limit runtime or any veto, sorts eligible movies by points, breaks ties by TMDB rating, and uses the lower TMDB ID as a final deterministic tie-break when needed.
-
-A finalized result contains the **winner**, eligible **runners-up**, **excluded** movies and explanations. If no eligible film remains, finalization fails and members must revise suggestions or ballots. The result is saved inside the completed night object, moving that night into History.
-
-**Note:** The original proposal explicitly requires points, vetoes, runtime checks, and a TMDB rating tie-break. Using a lower TMDB ID when both score and rating tie, and requiring every member to vote before finalization, are additional **frontend implementation decisions**.
-
-## TMDB integration
-
-`src/api/tmdb.js` centralizes four functions:
-
-| Function | TMDB path | Used by |
-| --- | --- | --- |
-| `getPopularMovies()` | `GET /movie/popular` | Discover default view |
-| `searchMovies(query)` | `GET /search/movie?query=...` | Discover and Night Room |
-| `getMovieDetails(id)` | `GET /movie/:id` | Movie Details and suggestion runtime validation |
-| `getWatchProviders(id)` | `GET /movie/:id/watch/providers` | Where to Watch |
-
-All current calls use `Authorization: Bearer <VITE_TMDB_TOKEN>`. Search terms use `encodeURIComponent`. TMDB image paths are combined with the image base URL; full backdrops use a larger image variant. Streaming/rental options vary by country and may be absent. Where to Watch credits JustWatch and links to the TMDB viewing page, not a made-up direct streaming link.
-
-### Before public release: TMDB attribution
-
-The official **TMDB logo and required API acknowledgement have not yet been integrated**. Add the approved asset and attribution before deploying publicly; the present footer credit alone is not the final attribution implementation. Keep the JustWatch attribution on provider displays. See the official [TMDB logos and attribution page](https://www.themoviedb.org/about/logos-attribution).
-
-## Testing and quality checks
-
-The frontend testing setup created during the project uses **Vitest** and **React Testing Library**. In the latest VS Code folder screenshot, the visible automated test file is:
-
-- `src/utils/calculateResults.test.js` - tests the winner-calculation logic.
-
-A `NightCard.test.jsx` component test was prepared earlier during development, but it does **not** appear in the latest folder screenshot; do not claim that it is currently committed unless you add it to `src/components/`.
-
-To run:
-
-```bash
-npm test
-npm run build
-npm run lint
-```
-
-**If `npm test` reports “Missing script: test”**, add `"test": "vitest run"` to the existing `scripts` object in `package.json` and ensure Vitest is installed. These tests are **frontend tests only**: the rubric also requires a backend test, which will be added later.
-
-### Manual regression checklist
-
-- [ ] Popular movies and search load normally.
-- [ ] Details and back-navigation return to the correct origin.
-- [ ] Backdrops and reusable loading indicators display smoothly.
-- [ ] Signup/login preview and logout work without real credentials.
-- [ ] Night creation and join-code membership work within one running session.
-- [ ] Nonmembers cannot navigate into a group's preview pages.
-- [ ] Runtime and duplicate-suggestion checks work.
-- [ ] Ballot uniqueness, veto restrictions, and vote updates work.
-- [ ] Only the host can finalize, and only after all members vote.
-- [ ] Winner, runner-up, excluded-film reasons, and History are correct.
-- [ ] Watchlist filters and mark-as-watched work for separate preview identities.
-- [ ] Where to Watch handles country selection and missing availability.
-- [ ] Desktop/mobile layouts and keyboard navigation are usable.
-
-## Demo walkthrough
-
-A clear 5-8 minute demonstration can follow this sequence:
-
-1. **Problem (30s):** Groups argue over movie choices, runtime restrictions, and fairness.
-2. **Discovery (45s):** Search TMDB, open details, and show runtime/provider information.
-3. **Group setup (60s):** Preview login, create a night, show runtime cap and join code.
-4. **Suggestions (60s):** Add an eligible movie; demonstrate rejecting a long or duplicate film.
-5. **Voting (60s):** Show top-three ranks, optional veto, and progress.
-6. **Results (75s):** Finalize as host; explain 3/2/1 points, veto exclusion, and TMDB tie-breaking.
-7. **Personal features (30s):** Watchlist and completed-night history.
-8. **Technical explanation (45s):** React state/props, `fetch`, routing, pure scoring function, tests, and next steps.
-
-All timings are suggested presentation structure, not course deadlines. Because state resets on reload, **prepare your demonstration in one browser session** until persistent storage is implemented.
-
-## Current limitations
-
-1. **No real authentication:** The preview accepts dummy form input; passwords are not validated, hashed, or stored.
-2. **No database:** Refreshing clears preview users, nights, member lists, votes, results, and watchlists.
-3. **No shared realtime state:** Other browsers and devices do not synchronize; voting progress reflects the current React instance.
-4. **Frontend route checks aren't security:** Backend endpoints must independently authenticate and authorize each action.
-5. **Preview IDs and join codes:** Local IDs and random join-code logic are intended for demonstration, not secure server-side identity or uniqueness.
-6. **TMDB token exposed in frontend:** Migrate the token to Express before deploying.
-7. **Shareable PNG:** Deferred intentionally.
-8. **TMDB logo/official attribution:** Still pending before deployment.
-9. **Deployment and backend tests:** Not complete.
-
-## Backend roadmap
-
-The planned stack is **Node.js + Express + MongoDB + Mongoose** (MongoDB is allowed by the capstone specification). Existing React pages and components should largely remain intact; only the data source and server-enforced business logic change.
-
-Planned server resources: users, nights, memberships, suggestions, ballots, watchlists, finalized results; and TMDB proxy endpoints. Implement signup/login with bcrypt and JWT, input validation, membership and ownership checks, CRUD routes, consistent error/status responses, and tests. Move scoring and finalization checks onto the server; persist results in MongoDB. Then replace local React updates with `fetch` calls and use polling (for example every 15 seconds while a room is open) for cross-device voting progress.
-
-## GitHub submission notes
-
-Place this file in the root of your frontend working directory as **`README.md`**, alongside `package.json`. GitHub displays the README automatically when viewing the frontend branch. The existing `.gitignore` should continue excluding `.env`, `node_modules/` and `dist/`.
-
-If Git is already connected and you are currently on the correct frontend branch, save the file and run:
-
-```bash
-git status
-git add README.md
-git commit -m "Add frontend project README"
-git push
-```
-
-For the initial push of the entire frontend instead, stage all non-ignored project files using `git add .`. Verify the active branch with `git branch --show-current` before pushing. **Do not commit `.env` or expose your TMDB token in README screenshots or text.**
-
-## Troubleshooting
-
-| Problem | What to check |
-| --- | --- |
-| `Failed to resolve import "./pages/SignupPage"` | Correct `src/pages/SignupPage.jsx` filename and default export |
-| Movie search fails | Valid `VITE_TMDB_TOKEN`, `.env` in the project root, restart Vite after `.env` changes, browser network errors |
-| `npm test`: missing script | Add `"test": "vitest run"` to `package.json` and install test dependencies |
-| `API_KEY is declared but never used` | Remove the unused `VITE_TMDB_API_KEY` declaration; the project uses a Bearer token |
-| Night data disappears | Expected: React `useState` data resets on refresh |
-| Native dropdown highlight still blue | OS/browser styling limits the appearance of native `<select>` options |
-| Where to Watch is empty | Country-specific provider information may not exist in TMDB |
-| Sharing/download not found | Downloadable result cards were intentionally skipped |
-| Dev server port differs | Use the local URL actually printed by Vite |
-
-## Attribution and contributors
-
-**Project:** Movie Night - full-stack capstone proposal, currently in the frontend stage.  
-**Proposal contributors:** Miguel Aoun and Sara Abi Ghosn (as named in the original capstone proposal).  
-**Movie metadata and imagery:** [The Movie Database (TMDB)](https://www.themoviedb.org/).  
-**Watch provider information:** [JustWatch](https://www.justwatch.com/) via TMDB.
-
-This README documents the frontend developed in the guided project steps, cross-checked where possible against the latest folder screenshot. It does not claim to be a complete code audit. Before final submission, compare the file tree and function names with your latest working directory, and add the live repository and deployed URLs once available.
+React 19 · Vite · React Router · Express API Integration · MongoDB Persistence

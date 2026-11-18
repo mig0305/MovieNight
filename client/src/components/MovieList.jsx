@@ -10,7 +10,7 @@ export function MovieList({ movies }) {
         <div className="movie-list">
             {movies.map((movie, index) => (
                 <MovieCard
-                    key={movie.id}
+                    key={movie.tmdbId ?? movie.id}
                     movie={movie}
                     delay={index * 0.05}
                 />

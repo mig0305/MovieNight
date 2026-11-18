@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getPopularMovies, searchMovies } from "../api/tmdb";
+import { getPopularMovies, searchMovies } from "../api/movies";
 import { SearchBar } from "../components/SearchBar";
 import { MovieList } from "../components/MovieList";
 import LoadingIndicator from "../components/LoadingIndicator";

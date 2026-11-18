@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 
-import { getWatchProviders,IMAGE_BASE_URL } from "../api/tmdb";
+import { getWatchProviders } from "../api/movies";
+import { IMAGE_BASE_URL } from "../api/tmdbImages";
 
 import LoadingIndicator from "./LoadingIndicator";
 
