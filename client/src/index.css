@@ -2320,7 +2320,7 @@ button[type="submit"]:hover {
 .voting-progress {
     width: 40%;
     height: 12px;
-    margin: 18px 0 10px;
+    margin: 18px 2px 20px;
     overflow: hidden;
     background: var(--progress-bg);
     border-radius: 20px;
@@ -2721,5 +2721,41 @@ img {
 @media (prefers-reduced-motion: reduce) {
     .mini-spinner {
         animation: none;
+    }
+}
+
+/* ======================================
+   FINAL UI SPACING FIXES
+====================================== */
+
+/* 1. Space out the voting action boxes */
+
+.voting-section > .voting-action + .voting-action {
+    margin-top: 18px;
+}
+
+/* 2. Separate Reload voting choices from the form */
+
+.vote-page > .vote-card + .night-button {
+    margin-top: 24px;
+}
+
+/* 3. Fix Refresh Room button on mobile */
+
+@media (max-width: 700px) {
+    .night-room-page .room-section > .room-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .night-room-page .room-section > .room-header h2 {
+        margin-bottom: 0;
+    }
+
+    .night-room-page .room-section > .room-header .night-button {
+        flex: 0 0 auto;
+        width: auto;
+        max-width: 100%;
     }
 }
