@@ -1,47 +1,129 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { NightCard } from "../components/NightCard";
 
-export default function HistoryPage({ nights, currentUser }) {
+import LoadingIndicator from "../components/LoadingIndicator";
+import { useAuth } from "../auth/useAuth";
+import { getMyNights, getNightResult } from "../api/nights";
+
+export default function HistoryPage() {
+    const { currentUser } = useAuth();
+
+    const [history, setHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [reloadKey, setReloadKey] = useState(0);
 
     const [search, setSearch] = useState("");
     const [sortOrder, setSortOrder] = useState("newest");
 
-    // Only completed nights belonging to this user
-    const completedNights = nights.filter(
-        (night) =>
-            night.status === "completed" &&
-            night.memberEmails.includes(currentUser.email) &&
-            night.result?.winner
-    );
+    // Load my closed nights, then each night's official winner.
+    useEffect(() => {
+        const controller = new AbortController();
+        const { signal } = controller;
 
-    // Search by night title or winning movie
-    const matchingNights = completedNights.filter((night) => {
-        const query = search.trim().toLowerCase();
+        async function loadHistory() {
+            setLoading(true);
+            setError("");
 
-        const title = night.title.toLowerCase();
-        const winner = night.result.winner.title.toLowerCase();
+            try {
+                const nights = await getMyNights({ signal });
 
-        return (
-            title.includes(query) ||
-            winner.includes(query)
-        );
-    });
+                if (!Array.isArray(nights)) {
+                    throw new Error(
+                        "The API returned an invalid list of nights."
+                    );
+                }
 
-    // Sort the matching results
-    const sortedNights = matchingNights.sort((a, b) => {
+                const closedNights = nights.filter(
+                    (night) => night.status === "closed"
+                );
 
-        if (sortOrder === "newest") {
-            return (
-                new Date(b.finalizedAt) -
-                new Date(a.finalizedAt)
-            );
+                // One result request per closed night, in parallel.
+                // If one fails, the others are still shown.
+                const results = await Promise.allSettled(
+                    closedNights.map((night) =>
+                        getNightResult(night._id, { signal })
+                    )
+                );
+
+                const entries = closedNights.map((night, index) => {
+                    const outcome = results[index];
+
+                    return {
+                        night,
+                        winner:
+                            outcome.status === "fulfilled"
+                                ? outcome.value.winner
+                                : null,
+                        ballots:
+                            outcome.status === "fulfilled"
+                                ? outcome.value.ballots
+                                : null,
+                        resultFailed: outcome.status === "rejected"
+                    };
+                });
+
+                if (!signal.aborted) {
+                    setHistory(entries);
+                }
+            } catch (err) {
+                if (!signal.aborted) {
+                    setError(err.message);
+                }
+            } finally {
+                if (!signal.aborted) {
+                    setLoading(false);
+                }
+            }
         }
 
+        loadHistory();
+
+        return () => controller.abort();
+    }, [reloadKey]);
+
+    if (loading) {
+        return <LoadingIndicator text="Loading your history..." />;
+    }
+
+    if (error) {
         return (
-            new Date(a.finalizedAt) -
-            new Date(b.finalizedAt)
+            <section className="history-page">
+                <Link to="/nights" className="back-link">
+                    ← Back to My Nights
+                </Link>
+
+                <h1>Unable to load history</h1>
+
+                <p className="room-message error" role="alert">
+                    {error}
+                </p>
+
+                <button
+                    type="button"
+                    className="night-button secondary"
+                    onClick={() => setReloadKey((value) => value + 1)}
+                >
+                    Retry
+                </button>
+            </section>
         );
+    }
+
+    // Search by night title or winning movie
+    const query = search.trim().toLowerCase();
+
+    const matching = history.filter(({ night, winner }) =>
+        night.title.toLowerCase().includes(query) ||
+        (winner?.title ?? "").toLowerCase().includes(query)
+    );
+
+    // A closed night can't change, so updatedAt is when voting closed
+    const sorted = [...matching].sort((a, b) => {
+        const difference =
+            new Date(b.night.updatedAt) - new Date(a.night.updatedAt);
+
+        return sortOrder === "newest" ? difference : -difference;
     });
 
     return (
@@ -84,39 +166,27 @@ export default function HistoryPage({ nights, currentUser }) {
                     <select
                         id="history-sort"
                         value={sortOrder}
-                        onChange={(e) =>
-                            setSortOrder(e.target.value)
-                        }
+                        onChange={(e) => setSortOrder(e.target.value)}
                     >
-                        <option value="newest">
-                            Newest First
-                        </option>
-
-                        <option value="oldest">
-                            Oldest First
-                        </option>
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
                     </select>
                 </div>
 
             </div>
 
-            <h2>
-                Completed Nights ({sortedNights.length})
-            </h2>
+            <h2>Completed Nights ({sorted.length})</h2>
 
-            {sortedNights.length === 0 ? (
+            {sorted.length === 0 ? (
 
                 <div className="night-empty">
                     <p>
-                        {completedNights.length === 0
+                        {history.length === 0
                             ? "You haven't completed any movie nights yet."
                             : "No completed nights match your search."}
                     </p>
 
-                    <Link
-                        to="/nights"
-                        className="night-button"
-                    >
+                    <Link to="/nights" className="night-button">
                         My Nights
                     </Link>
                 </div>
@@ -125,13 +195,81 @@ export default function HistoryPage({ nights, currentUser }) {
 
                 <div className="night-grid">
 
-                    {sortedNights.map((night) => (
-                        <NightCard
-                            key={night.id}
-                            night={night}
-                            currentUser={currentUser}
-                        />
-                    ))}
+                    {sorted.map(({ night, winner, ballots, resultFailed }) => {
+                        const ownerId = night.owner?._id ?? night.owner;
+
+                        const isOwner =
+                            String(ownerId) === String(currentUser.id);
+
+                        const memberCount = Array.isArray(night.members)
+                            ? night.members.length
+                            : 0;
+
+                        return (
+                            <article className="night-card" key={night._id}>
+                                <div className="night-card-header">
+                                    <h3>{night.title}</h3>
+
+                                    <span className="night-status completed">
+                                        Closed
+                                    </span>
+                                </div>
+
+                                <p className="night-role">
+                                    {isOwner
+                                        ? "You were the host"
+                                        : "You were a member"}
+                                </p>
+
+                                <div className="night-info">
+                                    <p>
+                                        Winner:
+                                        <strong>
+                                            {" "}
+                                            {resultFailed
+                                                ? "Result unavailable"
+                                                : winner
+                                                    ? winner.title
+                                                    : "No winner"}
+                                        </strong>
+                                    </p>
+
+                                    {winner && (
+                                        <p>
+                                            Points:
+                                            <strong> {winner.points}</strong>
+                                        </p>
+                                    )}
+
+                                    {ballots !== null && (
+                                        <p>
+                                            Ballots:
+                                            <strong>
+                                                {" "}{ballots} of {memberCount}
+                                            </strong>
+                                        </p>
+                                    )}
+
+                                    <p>
+                                        Closed on:
+                                        <strong>
+                                            {" "}
+                                            {new Date(
+                                                night.updatedAt
+                                            ).toLocaleDateString()}
+                                        </strong>
+                                    </p>
+                                </div>
+
+                                <Link
+                                    to={`/nights/${night._id}/results`}
+                                    className="night-button room-button"
+                                >
+                                    View Results
+                                </Link>
+                            </article>
+                        );
+                    })}
 
                 </div>
             )}

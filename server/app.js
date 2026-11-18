@@ -9,6 +9,7 @@ import authRouter from './routes/auth.js';
 import moviesRouter from './routes/movies.js';
 import nightsRouter from './routes/nights.js';
 import membershipsRouter from './routes/memberships.js';
+import watchlistRouter from './routes/watchlist.js';
 
 // app.js builds the Express app: middleware and routes, in order.
 // It does NOT connect to the database or listen on a port; server.js does that.
@@ -47,7 +48,7 @@ app.use('/api/movies', moviesRouter);
 // locked
 app.use('/api/nights', requireAuth, nightsRouter);
 app.use('/api/memberships', requireAuth, membershipsRouter);
-
+app.use('/api/watchlist', requireAuth, watchlistRouter);
 // After all routes: nothing matched
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

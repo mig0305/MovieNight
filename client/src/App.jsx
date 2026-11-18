@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 
@@ -6,6 +6,12 @@ import { Navbar } from "./components/NavBar";
 import DiscoverPage from "./pages/DiscoverPage";
 import ConnectionTestPage from "./pages/ConnectionTestPage";
 import { useAuth } from "./auth/useAuth";
+import {
+    getWatchlist,
+    addToWatchlist,
+    setWatchlistWatched,
+    removeFromWatchlist
+} from "./api/watchlist";
 
 const MovieDetailsPage = lazy(() =>
     import("./pages/MovieDetailsPage")
@@ -61,80 +67,106 @@ function App() {
         authError,
         logout
     } = useAuth();
-    // Temporary frontend-only storage for movie nights
-    const [nights] = useState([]);
-    const [watchlist, setWatchlist] = useState([]);
+    // The logged-in user's watchlist, loaded from MongoDB.
+    // We remember whose list it is, so a different user never sees it.
+    const userId = currentUser?.id ?? null;
 
-    function handleAddToWatchlist(movie) {
+    const [savedWatchlist, setSavedWatchlist] = useState({
+        userId: null,
+        items: []
+    });
+    const [watchlistError, setWatchlistError] = useState("");
 
-        if (!currentUser) return;
+    const watchlist =
+        userId && savedWatchlist.userId === userId
+            ? savedWatchlist.items
+            : [];
 
-        // Prevent duplicates in the current user's watchlist
-        const alreadySaved = watchlist.some(
-            (item) =>
-                item.userEmail === currentUser.email &&
-                item.tmdbId === Number(movie.id)
-        );
+    // Load the watchlist after login (and again if the user changes)
+    useEffect(() => {
+        if (!userId) return;
 
-        if (alreadySaved) return;
+        const controller = new AbortController();
 
-        const newItem = {
-            userEmail: currentUser.email,
-            tmdbId: Number(movie.id),
-            title: movie.title,
-            posterPath: movie.poster_path || null,
-            releaseDate: movie.release_date || "",
-            runtime: movie.runtime || null,
-            voteAverage: movie.vote_average || 0,
-            watched: false,
-            addedAt: new Date().toISOString(),
-            watchedAt: null
-        };
+        getWatchlist({ signal: controller.signal })
+            .then((items) => {
+                setSavedWatchlist({ userId, items });
+                setWatchlistError("");
+            })
+            .catch((error) => {
+                if (error.name !== "AbortError") {
+                    setWatchlistError(error.message);
+                }
+            });
 
-        setWatchlist([...watchlist, newItem]);
+        return () => controller.abort();
+    }, [userId]);
+
+    function updateWatchlistItems(change) {
+        setSavedWatchlist((current) => ({
+            ...current,
+            items: change(current.items)
+        }));
     }
 
-    function handleRemoveFromWatchlist(tmdbId) {
+    async function handleAddToWatchlist(movie) {
+        if (!userId) return;
 
-        if (!currentUser) return;
+        setWatchlistError("");
 
-        const updatedWatchlist = watchlist.filter(
-            (item) =>
-                !(
-                    item.userEmail === currentUser.email &&
-                    item.tmdbId === Number(tmdbId)
+        try {
+            const item = await addToWatchlist(movie.id);
+
+            updateWatchlistItems((items) => [
+                item,
+                ...items.filter((i) => i.tmdbId !== item.tmdbId)
+            ]);
+        } catch (error) {
+            setWatchlistError(error.message);
+        }
+    }
+
+    async function handleRemoveFromWatchlist(tmdbId) {
+        if (!userId) return;
+
+        setWatchlistError("");
+
+        try {
+            await removeFromWatchlist(tmdbId);
+
+            updateWatchlistItems((items) =>
+                items.filter((i) => i.tmdbId !== Number(tmdbId))
+            );
+        } catch (error) {
+            setWatchlistError(error.message);
+        }
+    }
+
+    async function handleToggleWatched(tmdbId) {
+        const item = watchlist.find(
+            (i) => i.tmdbId === Number(tmdbId)
+        );
+
+        if (!item) return;
+
+        setWatchlistError("");
+
+        try {
+            const updated = await setWatchlistWatched(
+                item.tmdbId,
+                !item.watched
+            );
+
+            updateWatchlistItems((items) =>
+                items.map((i) =>
+                    i.tmdbId === updated.tmdbId ? updated : i
                 )
-        );
-
-        setWatchlist(updatedWatchlist);
+            );
+        } catch (error) {
+            setWatchlistError(error.message);
+        }
     }
 
-    function handleToggleWatched(tmdbId) {
-
-        if (!currentUser) return;
-
-        const updatedWatchlist = watchlist.map((item) => {
-
-            if (
-                item.userEmail === currentUser.email &&
-                item.tmdbId === Number(tmdbId)
-            ) {
-                const nowWatched = !item.watched;
-
-                return {
-                    ...item,
-                    watched: nowWatched,
-                    watchedAt: nowWatched
-                        ? new Date().toISOString()
-                        : null
-                };
-            }
-
-            return item;
-        });
-
-        setWatchlist(updatedWatchlist);
-    }
     if (authLoading) {
         return (
             <LoadingIndicator text="Checking your session..." />
@@ -205,6 +237,7 @@ function App() {
                                 <MovieDetailsPage
                                     currentUser={currentUser}
                                     watchlist={watchlist}
+                                    watchlistError={watchlistError}
                                     onAddToWatchlist={handleAddToWatchlist}
                                     onRemoveFromWatchlist={handleRemoveFromWatchlist}
                                     onToggleWatched={handleToggleWatched}
@@ -304,7 +337,7 @@ function App() {
                                 currentUser ? (
                                     <WatchlistPage
                                         watchlist={watchlist}
-                                        currentUser={currentUser}
+                                        watchlistError={watchlistError}
                                         onRemoveFromWatchlist={
                                             handleRemoveFromWatchlist
                                         }
@@ -320,10 +353,7 @@ function App() {
                             path="/history"
                             element={
                                 currentUser ? (
-                                    <HistoryPage
-                                        nights={nights}
-                                        currentUser={currentUser}
-                                    />
+                                    <HistoryPage />
                                 ) : (
                                     <Navigate to="/login" replace />
                                 )

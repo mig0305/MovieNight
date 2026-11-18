@@ -7,6 +7,7 @@ import {getMovieDetails, IMAGE_BASE_URL, BACKDROP_BASE_URL} from "../api/tmdb";
 export default function MovieDetailsPage({
     currentUser,
     watchlist,
+    watchlistError,
     onAddToWatchlist,
     onRemoveFromWatchlist,
     onToggleWatched
@@ -18,13 +19,15 @@ export default function MovieDetailsPage({
 
     const returnTo = location.state?.returnTo || "/";
 
-    const backLabel = returnTo.startsWith("/nights/")
-        ? "Back to Night Room"
-        : returnTo === "/watchlist"
-            ? "Back to Watchlist"
-            : returnTo.includes("/results")
-                ? "Back to Results"
-                : "Back to Discover";
+    const backLabel = returnTo.endsWith("/results")
+        ? "Back to Results"
+        : returnTo.startsWith("/nights/")
+            ? "Back to Night Room"
+            : returnTo === "/watchlist"
+                ? "Back to Watchlist"
+                : returnTo === "/history"
+                    ? "Back to History"
+                    : "Back to Discover";
 
     const [movie, setMovie] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -33,9 +36,7 @@ export default function MovieDetailsPage({
 
     const savedMovie = movie && currentUser
         ? watchlist.find(
-            (item) =>
-                item.userEmail === currentUser.email &&
-                item.tmdbId === Number(movie.id)
+            (item) => item.tmdbId === Number(movie.id)
         )
         : null;
 
@@ -190,6 +191,12 @@ export default function MovieDetailsPage({
                             {/* PERSONAL WATCHLIST */}
 
                             <div className="details-watchlist">
+                                
+                                {watchlistError && (
+                                    <p className="room-message error" role="alert">
+                                        {watchlistError}
+                                    </p>
+                                )}
 
                                 {currentUser ? (
 

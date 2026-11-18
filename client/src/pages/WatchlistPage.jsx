@@ -4,21 +4,17 @@ import { IMAGE_BASE_URL } from "../api/tmdb";
 
 export default function WatchlistPage({
     watchlist,
-    currentUser,
+    watchlistError,
     onRemoveFromWatchlist,
     onToggleWatched
 }) {
     const [filter, setFilter] = useState("all");
 
-    // Only this user's movies, newest first
-    const myMovies = watchlist
-        .filter(
-            (item) => item.userEmail === currentUser.email
-        )
-        .sort(
-            (a, b) =>
-                new Date(b.addedAt) - new Date(a.addedAt)
-        );
+    // Express only returns this user's movies, newest first
+    const myMovies = [...watchlist].sort(
+        (a, b) =>
+            new Date(b.createdAt) - new Date(a.createdAt)
+    );
 
     const watchedCount = myMovies.filter(
         (item) => item.watched
@@ -45,7 +41,11 @@ export default function WatchlistPage({
                 </p>
             </div>
 
-            {/* WATCHLIST COUNTERS */}
+            {watchlistError && (
+                <p className="room-message error" role="alert">
+                    {watchlistError}
+                </p>
+            )}
 
             <div className="watchlist-stats">
                 <div>

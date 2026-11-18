@@ -40,6 +40,14 @@ export const SuggestionInput = z.object({
   tmdbId: z.number({ error: 'tmdbId must be a positive whole number' }).int().positive(),
 });
 
+export const WatchlistInput = z.object({
+  tmdbId: z.number({ error: 'tmdbId must be a positive whole number' }).int().positive(),
+});
+
+export const WatchlistUpdateInput = z.object({
+  watched: z.boolean({ error: 'watched must be true or false' }),
+});
+
 export const BallotInput = z
   .object({
     ranking: z.array(objectId).length(
