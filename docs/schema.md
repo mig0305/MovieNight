@@ -31,7 +31,7 @@ users 1 ──saves─── N watchlistitems  (personal, one per user per film)
 | `owner`         | ObjectId → users | required. Only the owner can edit/delete |
 | `title`         | String     | required                                    |
 | `joinCode`      | String     | required, **unique**, uppercase, 6 chars    |
-| `maxRuntimeMin` | Number     | required, ≥ 1 (the runtime cap)             |
+| `maxRuntimeMin` | Number     | required, ≥ 30-400 minutes (runtime cap)    |
 | `status`        | String     | `open` or `closed`, default `open`          |
 | `members`       | [ObjectId → users] | replaces the `night_members` table; owner is added on create |
 | `createdAt` / `updatedAt` | Date |                                      |
@@ -91,7 +91,8 @@ users can each save it). Every `/api/watchlist` query filters by
   Someone else's night → **404**.
 - Owner-only actions (edit, close, delete the night) → **403** for other members.
 - Deleting a night deletes its suggestions and votes.
-- Deleting a suggestion removes it from every ballot in that night.
+- Deleting a suggestion deletes any ballot that ranked that movie, requiring the affected user to vote again. If the movie was only vetoed,
+the ballot is preserved and its veto is set to `null`.
 - Joining, suggesting and voting are refused once a night is `closed`.
 - A suggestion is refused (400) if its TMDB runtime is missing or over the
   night's `maxRuntimeMin` (Milestone 4).
