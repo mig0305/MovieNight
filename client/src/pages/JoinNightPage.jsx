@@ -62,6 +62,7 @@ export default function JoinNightPage() {
                 <form
                     className="night-form"
                     onSubmit={handleSubmit}
+                    autoComplete="off"
                 >
                     <label htmlFor="join-code">
                         Invitation Code

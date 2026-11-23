@@ -44,6 +44,7 @@ export default function NightRoomPage() {
     const [closeError, setCloseError] = useState("");
 
     const searchRequestId = useRef(0);
+    const confirmDialogRef = useRef(null);
 
     // Load real room data, then poll every 15 seconds.
     useEffect(() => {
@@ -241,16 +242,20 @@ export default function NightRoomPage() {
         }
     }
 
-        // Host only: close voting, then open the official results.
-    async function handleCloseVoting() {
+    // Host only: close voting, then open the official results.
+    
+    // Open the custom confirmation dialog.
+    function handleCloseVoting() {
         if (!night || closing) return;
 
-        const confirmed = window.confirm(
-            "Close voting now? Nobody will be able to " +
-            "suggest movies or change ballots afterwards."
-        );
+        confirmDialogRef.current?.showModal();
+    }
 
-        if (!confirmed) return;
+    // Confirm the action and finalize voting.
+    async function confirmCloseVoting() {
+        if (!night || closing) return;
+
+        confirmDialogRef.current?.close();
 
         setClosing(true);
         setCloseError("");
@@ -329,6 +334,48 @@ export default function NightRoomPage() {
             <Link to="/nights" className="back-link">
                 ← Back to My Nights
             </Link>
+            
+            <dialog
+                    ref={confirmDialogRef}
+                    className="close-voting-dialog"
+                    aria-labelledby="close-voting-title"
+                    aria-describedby="close-voting-description"
+                >
+                    <h2 id="close-voting-title">
+                        Close Voting?
+                    </h2>
+
+                    <p id="close-voting-description">
+                        Are you sure you want to finalize this
+                        movie night? Members will no longer be
+                        able to suggest movies or change
+                        their ballots.
+                    </p>
+
+                    <p className="close-voting-warning">
+                        This action cannot be undone.
+                    </p>
+
+                    <div className="close-voting-actions">
+                        <button
+                            type="button"
+                            className="close-voting-cancel"
+                            onClick={() =>
+                                confirmDialogRef.current?.close()
+                            }
+                        >
+                            Cancel
+                        </button>
+
+                        <button
+                            type="button"
+                            className="close-voting-confirm"
+                            onClick={confirmCloseVoting}
+                        >
+                            Close Voting & Show Results
+                        </button>
+                    </div>
+                </dialog>
 
             {/* NIGHT INFORMATION */}
 
