@@ -2,6 +2,14 @@
 
 **React frontend architecture, components, pages, API communication and implementation guide.**
 
+
+## Live Application
+
+- **Frontend (Vercel):** https://movienight-alpha.vercel.app
+- **Backend API (Render):** https://movienight-api.onrender.com/api
+- **API Health Check:** https://movienight-api.onrender.com/api/health
+
+
 ## 1. Overview
 
 Movie Night is a full-stack collaborative movie selection application. Its frontend is built with **React 19 and Vite** and communicates with an Express backend to provide movie discovery, user authentication, collaborative movie nights, voting, results, personal watchlists and viewing history.
@@ -44,6 +52,7 @@ The frontend does not communicate directly with MongoDB or make authenticated TM
 
 Instead, all application data is retrieved through the Express backend.
 
+### Local Development Architecture
 ```text
                  REACT FRONTEND
                   Vite :5173
@@ -74,6 +83,38 @@ Instead, all application data is retrieved through the Express backend.
                 v
           Movie information
 ```
+
+### Production Architecture
+
+```text
+          REACT FRONTEND
+              Vercel
+                |
+                v
+           API MODULES
+  backend.js / movies.js / nights.js
+          watchlist.js
+                |
+                v
+           apiRequest()
+                |
+        HTTPS REST requests
+           VITE_API_URL
+                |
+                v
+         EXPRESS BACKEND
+             Render
+            /      \
+           v        v
+       TMDB API   MongoDB Atlas
+                   (Mongoose)
+```
+
+The deployed frontend communicates directly with Express
+over HTTPS using the backend origin configured through
+`VITE_API_URL`.
+
+The Vite proxy is used exclusively during local development.
 
 Movie posters, backdrops and provider logos are a separate case:
 
@@ -302,9 +343,22 @@ Responsibilities:
 - Add and remove suggestions.
 - Display voting progress.
 - Allow the host to close voting when backend rules permit it.
+- Display a custom confirmation dialog before finalizing voting.
+- Allow the host to confirm or cancel finalization.
 - Refresh room information periodically.
 
 The room refreshes its data every 15 seconds rather than relying on WebSockets.
+
+### Close Voting Confirmation
+
+The Night Room uses a native HTML `<dialog>` element with
+custom CSS styling rather than the browser's default
+`window.confirm()` popup.
+
+The host must explicitly confirm the action before the
+frontend calls `closeNightVoting()`.
+
+Cancelling the dialog leaves the movie night unchanged.
 
 Important API functions:
 
@@ -639,7 +693,9 @@ For movie information:
 5. Express normalizes the response and returns JSON.
 6. React updates its state and renders the information.
 
-The TMDB Read Access Token is stored exclusively in `server/.env`.
+The TMDB Read Access Token is configured exclusively on the backend,
+through `server/.env` during local development and Render environment
+variables in production.
 
 It must never be included in frontend environment variables or browser requests.
 
@@ -753,11 +809,18 @@ Current test files include:
 |---|---|
 | `SearchBar.test.jsx` | Search input and submission |
 | `NightCard.test.jsx` | Movie-night card rendering |
-| `NightRoomPage.test.jsx` | Room behavior and suggestion interactions |
+| `NightRoomPage.test.jsx` | Room behavior, suggestions, host permissions,voting finalization and confirmation dialog interactions |
 | `VotePage.test.jsx` | Ballot selection and submission |
 | `ResultsPage.test.jsx` | Results rendering |
 | `WatchlistPage.test.jsx` | Watchlist interactions |
 | `HistoryPage.test.jsx` | Completed-night history |
+
+Native dialog methods are simulated in `setupTests.js` when
+they are unavailable in jsdom.
+
+The Night Room tests verify that voting is finalized only
+after explicit confirmation and that cancelling the dialog
+does not trigger the backend operation.
 
 Frontend tests mock API functions and therefore do not require a running Express server, MongoDB database or live TMDB connection.
 
@@ -846,6 +909,7 @@ client/
 ├── package.json
 ├── package-lock.json
 ├── vite.config.js
+├── vercel.json
 ├── .env.example
 └── README_Frontend.md
 ```
@@ -868,15 +932,52 @@ Individual `.test.jsx` files are also maintained alongside the components and pa
 | `index.css` | Global styling |
 | `App.css` | Application-specific styling |
 | `vite.config.js` | Vite development server, API proxy and Vitest configuration |
-| `setupTests.js` | Frontend test setup |
+| `setupTests.js` | Frontend test setup, jest-dom matchers and native dialog compatibility |
+| `vercel.json` | Production SPA rewrite configuration for React Router navigation and page refreshes |
 
-## 14. Current scope and limitations
 
-The following features are intentionally outside the current implementation scope:
+## 14. Production Deployment
 
-- Downloadable/shareable movie-night results PNG.
-- The additional branded TMDB logo treatment in the footer.
-- Public production deployment, which will be handled separately.
+The Movie Night frontend is deployed on Vercel.
+
+- **Live Application:** https://movienight-alpha.vercel.app
+- **Backend API:** https://movienight-api.onrender.com
+
+### Vercel Configuration
+
+- Production branch: `frontend-integration`
+- Root directory: `client`
+- Framework preset: Vite
+- Build command: `npm run build`
+- Output directory: `dist`
+
+### API Communication
+
+The frontend uses the `VITE_API_URL` environment variable
+to communicate with the deployed Express backend.
+
+During local development, this variable can remain empty,
+allowing API requests to pass through the Vite development
+proxy.
+
+In production, API requests are sent directly to the
+Render backend over HTTPS.
+
+Private TMDB credentials, MongoDB credentials and JWT
+signing secrets are never included in the frontend bundle.
+
+### Client-Side Routing
+
+The `vercel.json` rewrite configuration ensures that
+React Router handles direct navigation and browser
+refreshes without hosting-related 404 errors.
+
+### Data Persistence
+
+All persistent application data is managed by the Express
+backend and stored in MongoDB Atlas.
+
+## 15. Known Limitations
 
 The application uses periodic room refreshes rather than WebSocket-based communication.
 
@@ -884,7 +985,10 @@ Movie provider availability depends on the information supplied by TMDB and may 
 
 The application requires a functioning backend connection for authenticated and persistent features.
 
-## 15. Related documentation
+The Render free-tier backend may require a cold start
+after a period of inactivity.
+
+## 16. Related Documentation
 
 For further project information, consult:
 

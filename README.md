@@ -1,8 +1,19 @@
 # Movie Night
 
+## Live Application
+
+- **Frontend (Vercel):** https://movienight-alpha.vercel.app
+- **Backend API (Render):** https://movienight-api.onrender.com
+- **API Health Check:** https://movienight-api.onrender.com/api/health
+
+## Overview
+
+Movie Night is publicly deployed using Vercel for the React
+frontend, Render for the Express backend, and MongoDB Atlas
+for persistent database storage.
 A group movie picker that settles the debate fairly. One person creates a
 **night** with a runtime cap and shares a join code. Everyone joins, suggests
-films found through TMDB, ranks their top three and uses one veto. The host
+films found through TMDB, ranks their top three and may use one veto. The host
 closes voting, and the server computes a fair winner and explains why every
 other film lost. Each user also keeps a personal **watchlist**, and a
 **history** of every finished night.
@@ -17,7 +28,7 @@ Miguel Aoun (242464) · Sara Abi Ghosn (240073)
 | Part      | Choice |
 |-----------|--------|
 | Front end | React 19 + Vite, React Router, Vitest + Testing Library, oxlint |
-| Back end  | Node.js 20+, Express 5, ES modules (`"type": "module"`), dotenv |
+| Back end | Node.js 24.x, Express 5, ES modules (`"type": "module"`), dotenv |
 | Validation & security | zod, helmet, express-rate-limit, Mongoose `sanitizeFilter` |
 | Database  | MongoDB (Atlas) with Mongoose |
 | Auth      | bcrypt password hashes, JWT (1 h expiry) sent as `Authorization: Bearer <token>` |
@@ -25,11 +36,16 @@ Miguel Aoun (242464) · Sara Abi Ghosn (240073)
 
 ## Setup
 
-You need **Node.js 20+**, a **MongoDB Atlas** database and a
+You need **Node.js 24.x**, a **MongoDB Atlas** database and a
 **TMDB API Read Access Token** (themoviedb.org → Settings → API).
 
-The TMDB token must be configured exclusively in `server/.env`.
+
+The TMDB token is configured exclusively on the backend:
+in `server/.env` during local development and through Render
+environment variables in production.
+
 It is never required or exposed in the React frontend.
+
 
 ### 1. Back end
 
@@ -45,7 +61,7 @@ npm run dev               # node --watch, restarts on every save
 | Variable        | Example | What it is |
 |-----------------|---------|------------|
 | `PORT` | `3000` | Optional API port; defaults to `3000` |
-| `MONGODB_URI`   | `mongodb+srv://…/movie-night` | Atlas connection string |
+| `MONGODB_URI` | `mongodb+srv://…/<database-name>` | Atlas connection string |
 | `JWT_SECRET`    | `node -p "crypto.randomBytes(32).toString('hex')"` | Signs tokens. Long and random |
 | `CLIENT_ORIGIN` | `http://localhost:5173` | The Vite app's origin, for CORS. No trailing `/` |
 | `TMDB_TOKEN`    | TMDB "API Read Access Token" | Used by the server's `/api/movies` routes |
@@ -76,6 +92,96 @@ using the local Vite proxy.
 
 `.env` files are git-ignored; only the `.env.example` files are committed.
 
+
+## Production Deployment
+
+### Hosting Architecture
+
+| Component | Hosting Platform | Root Directory |
+|---|---|---|
+| React frontend | Vercel | `client/` |
+| Express REST API | Render | `server/` |
+| Database | MongoDB Atlas | Cloud-hosted |
+
+Both hosting platforms use the `frontend-integration` branch.
+
+### Frontend Configuration
+
+- Framework: React and Vite
+- Root directory: `client`
+- Build command: `npm run build`
+- Output directory: `dist`
+- API origin configured through `VITE_API_URL`
+- React Router rewrites configured in `client/vercel.json`
+
+### Backend Configuration
+
+- Runtime: Node.js
+- Root directory: `server`
+- Build command: `npm ci`
+- Start command: `npm start`
+- Port dynamically assigned by Render
+- Public health endpoint: `/api/health`
+
+### Environment Variables and Security
+
+
+| Platform | Environment variable | Production value |
+|---|---|---|
+| Vercel | `VITE_API_URL` | `https://movienight-api.onrender.com` |
+| Render | `CLIENT_ORIGIN` | `https://movienight-alpha.vercel.app` |
+| Render | `MONGODB_URI` | Private Atlas connection string |
+| Render | `JWT_SECRET` | Private production signing secret |
+| Render | `TMDB_TOKEN` | Private TMDB Read Access Token |
+| Render | `TMDB_BASE_URL` | `https://api.themoviedb.org/3` |
+| Render | `NODE_ENV` | `production` |
+
+Origins must include `https://`, without trailing slashes
+or additional paths.
+
+Changes to `VITE_API_URL` require rebuilding and redeploying
+the frontend because Vite environment variables are embedded
+at build time.
+
+Private environment variable values must never be committed
+to Git or exposed to the browser.
+
+
+Production environment variables are configured directly
+through the Vercel and Render dashboards.
+
+The frontend uses `VITE_API_URL` to communicate with the
+deployed Express API over HTTPS.
+
+Database credentials, JWT secrets and TMDB credentials
+are stored exclusively on the backend.
+
+The backend uses `CLIENT_ORIGIN` to configure CORS for
+the deployed frontend.
+
+Private environment files are excluded from Git.
+
+### Database and External API
+
+The application uses the existing MongoDB Atlas database
+for persistent storage.
+
+Authenticated TMDB API requests are handled exclusively
+by the Express backend.
+
+Public movie posters, backdrops and provider logos are
+loaded directly from TMDB's public image resources.
+
+### Production Notes
+
+The deployed application operates independently of the
+local development environment.
+
+React Router supports direct page access and browser
+refreshes through the Vercel rewrite configuration.
+
+The Render free-tier backend may require a cold start
+after a period of inactivity.
 
 ## Features
 
@@ -119,10 +225,15 @@ is safe because a closed night can no longer change.
 - The owner of a night, a suggestion or a watchlist item always comes from the
   JWT, never from the request body; movie details always come from TMDB
 
-## API
 
-Base URL: `http://localhost:3000/api`. Every body is JSON. Every error is
-`{ "error": "message" }`.
+### API Base URLs
+
+- **Local development:** `http://localhost:3000/api`
+- **Production:** `https://movienight-api.onrender.com/api`
+
+Request and response bodies, when present, use JSON.
+API errors follow the format `{ "error": "message" }`.
+
 
 | Method | Path | Auth | Success | Can fail |
 |--------|------|------|---------|----------|
@@ -162,7 +273,7 @@ Base URL: `http://localhost:3000/api`. Every body is JSON. Every error is
 Every route is ready to send in `server/requests.http` (VS Code **REST Client**).
 
 ## Architecture
-
+### Local Development Architecture
 
                  React Frontend (Vite :5173)
                             |
@@ -190,8 +301,42 @@ TMDB public image URLs
       v
 Posters, backdrops and provider logos
 
+
+### Production Architecture
+
+```text
+         User's Browser
+               |
+               v
+       React Frontend
+           Vercel
+               |
+       HTTPS REST API
+        VITE_API_URL
+               |
+               v
+       Express Backend
+           Render
+          /      \
+         /        \
+        v          v
+    TMDB API    MongoDB Atlas
+  (TMDB_TOKEN)    (Mongoose)
+```
+
+In production, the browser communicates directly with the deployed
+Express backend over HTTPS. The Vite development proxy is not used.
+
+The backend permits requests from the deployed frontend through
+the `CLIENT_ORIGIN` environment variable.
+
+Public movie images continue to be loaded directly from TMDB's
+public image resources.
+
+
 All authenticated TMDB API requests originate from Express.
-The TMDB Read Access Token is stored exclusively in `server/.env`.
+The TMDB Read Access Token is configured through backend environment
+variables, using `server/.env` locally and the Render dashboard in production.
 The frontend communicates with Express through `apiRequest()`.
 
 Movie posters, backdrops and provider logos are loaded directly
@@ -245,7 +390,9 @@ client and the server.
 
 ## Milestones
 
-| Milestone | What |
+## Internal Full-Stack Integration Milestones
+
+| Integration Milestone | What |
 |-----|------|
 | 1 | Frontend ↔ backend connection: Vite proxy, `apiRequest()`, health check |
 | 2 | Authentication: signup, login, logout, JWT, session restore and expiry |
@@ -255,3 +402,16 @@ client and the server.
 | 6 | Finalization and results: host closes voting, official server-computed result |
 | 7 | Watchlist and history: personal watchlist in MongoDB, history of closed nights |
 | 8 | End-to-end testing, cleanup and documentation |
+
+
+## Official Capstone Milestones
+
+The following milestones correspond to the official
+Web Programming Capstone Milestones requirements.
+
+| Milestone | Deliverable | Status |
+|---|---|---|
+| 1 | Project scaffold, wireframes and database schema | Completed |
+| 2 | Core backend functionality, authentication and CRUD routes | Completed |
+| 3 | Frontend-backend integration and core application features | Completed |
+| 4 | Public deployment using Vercel, Render and MongoDB Atlas | Completed |
