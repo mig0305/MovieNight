@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from "vitest";
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -213,6 +213,7 @@ test("allows removing a stored suggestion", async () => {
 });
 
 
+
 test("host can close voting and is taken to the results", async () => {
     getNight.mockResolvedValue({
         ...room,
@@ -224,12 +225,28 @@ test("host can close voting and is taken to the results", async () => {
         status: "closed"
     });
 
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     renderRoom();
 
+    // Open the confirmation dialog.
     fireEvent.click(
         await screen.findByRole("button", {
+            name: "Close Voting & Show Results"
+        })
+    );
+
+    // Verify that the confirmation dialog opens.
+    const dialog = await screen.findByRole("dialog", {
+        name: "Close Voting?"
+    });
+
+    expect(dialog).toHaveAttribute("open");
+
+    // Voting must remain open until the host confirms.
+    expect(closeNightVoting).not.toHaveBeenCalled();
+
+    // Confirm the action inside the dialog.
+    fireEvent.click(
+        within(dialog).getByRole("button", {
             name: "Close Voting & Show Results"
         })
     );
@@ -239,9 +256,47 @@ test("host can close voting and is taken to the results", async () => {
     });
 
     expect(
-        await screen.findByRole("heading", { name: "Results Page" })
+        await screen.findByRole("heading", {
+            name: "Results Page"
+        })
     ).toBeInTheDocument();
 });
+
+test("host can cancel closing voting", async () => {
+    getNight.mockResolvedValue({
+        ...room,
+        ballotsCast: 2
+    });
+
+    renderRoom();
+
+    fireEvent.click(
+        await screen.findByRole("button", {
+            name: "Close Voting & Show Results"
+        })
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+        name: "Close Voting?"
+    });
+
+    fireEvent.click(
+        within(dialog).getByRole("button", {
+            name: "Cancel"
+        })
+    );
+
+    expect(dialog).not.toHaveAttribute("open");
+
+    expect(closeNightVoting).not.toHaveBeenCalled();
+
+    expect(
+        screen.getByRole("heading", {
+            name: "Friday Movie Night"
+        })
+    ).toBeInTheDocument();
+});
+
 
 test("host cannot close voting before anyone has voted", async () => {
     renderRoom();
