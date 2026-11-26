@@ -945,7 +945,7 @@ The Movie Night frontend is deployed on Vercel.
 
 ### Vercel Configuration
 
-- Production branch: `frontend-integration`
+- Production branch: `main`
 - Root directory: `client`
 - Framework preset: Vite
 - Build command: `npm run build`

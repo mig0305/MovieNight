@@ -103,7 +103,10 @@ using the local Vite proxy.
 | Express REST API | Render | `server/` |
 | Database | MongoDB Atlas | Cloud-hosted |
 
-Both hosting platforms use the `frontend-integration` branch.
+Both hosting platforms use the `main` branch for production deployment.
+
+The `frontend-integration` branch is retained as part of the
+project's development and integration history.
 
 ### Frontend Configuration
 
